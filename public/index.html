@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cassanova Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#161512;
+    --panel:#1f1d18;
+    --row:#201e19;
+    --row-alt:#26241d;
+    --border:#3a362c;
+    --border-soft:#2b2820;
+    --text:#ede8de;
+    --text-dim:#9c9686;
+    --text-faint:#6f6a5c;
+    --amber:#d9a441;
+    --amber-dim:#8c6f30;
+    --profit:#4f9c82;
+    --loss:#c4462b;
+    --loss-bg:rgba(196,70,43,0.12);
+    --profit-bg:rgba(79,156,130,0.10);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      linear-gradient(180deg, rgba(217,164,65,0.04), transparent 240px),
+      var(--bg);
+    color:var(--text);
+    font-family:'Space Mono', ui-monospace, monospace;
+    padding:28px 20px 60px;
+  }
+  .wrap{max-width:1080px;margin:0 auto;}
+
+  .stamp-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    border-bottom:2px solid var(--amber-dim);
+    padding-bottom:16px;
+    margin-bottom:22px;
+    flex-wrap:wrap;
+    gap:12px;
+  }
+  .stamp-header h1{
+    font-family:'Barlow Condensed', sans-serif;
+    font-weight:800;
+    font-size:34px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    margin:0;
+    color:var(--text);
+  }
+  .stamp-header h1 span{color:var(--amber);}
+  .stamp-header .sub{
+    font-family:'Barlow Condensed', sans-serif;
+    font-size:13px;
+    letter-spacing:3px;
+    text-transform:uppercase;
+    color:var(--text-faint);
+    margin-top:2px;
+  }
+  .stamp-meta{
+    text-align:right;
+    font-size:11px;
+    color:var(--text-faint);
+    letter-spacing:1px;
+  }
+
+  .ticker{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:1px;
+    background:var(--border);
+    border:1px solid var(--border);
+    margin-bottom:24px;
+  }
+  .ticker .cell{background:var(--panel);padding:14px 16px;}
+  .ticker .label{
+    font-family:'Barlow Condensed', sans-serif;
+    font-size:11px;letter-spacing:2px;text-transform:uppercase;
+    color:var(--text-faint);margin-bottom:6px;
+  }
+  .ticker .value{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .v-pos{color:var(--profit);}
+  .v-neg{color:var(--loss);}
+  .v-neutral{color:var(--text);}
+
+  .tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;}
+  .tab{
+    font-family:'Barlow Condensed', sans-serif;font-weight:600;letter-spacing:1.5px;
+    text-transform:uppercase;font-size:14px;padding:8px 16px;
+    background:var(--panel);border:1px dashed var(--border);color:var(--text-dim);
+    cursor:pointer;user-select:none;
+  }
+  .tab.active{color:var(--bg);background:var(--amber);border-color:var(--amber);}
+  .tab:hover:not(.active){border-color:var(--amber-dim);color:var(--text);}
+
+  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:10px;}
+  .btn{
+    font-family:'Barlow Condensed', sans-serif;font-weight:700;letter-spacing:1px;
+    text-transform:uppercase;font-size:13px;padding:9px 16px;background:transparent;
+    border:1px solid var(--amber-dim);color:var(--amber);cursor:pointer;border-radius:2px;
+  }
+  .btn:hover{background:rgba(217,164,65,0.1);border-color:var(--amber);}
+  .btn.primary{background:var(--amber);color:var(--bg);}
+  .btn.primary:hover{background:#e5b458;}
+  .btn.small{padding:5px 10px;font-size:11px;}
+  .btn.ghost{border-color:var(--border);color:var(--text-dim);}
+  .btn.ghost:hover{border-color:var(--text-dim);color:var(--text);}
+  .btn.danger{border-color:var(--loss);color:var(--loss);}
+  .btn.danger:hover{background:var(--loss-bg);}
+  .btn:disabled{opacity:0.4;cursor:not-allowed;}
+
+  table{width:100%;border-collapse:collapse;margin-bottom:26px;}
+  thead th{
+    font-family:'Barlow Condensed', sans-serif;font-size:11px;letter-spacing:1.5px;
+    text-transform:uppercase;color:var(--text-faint);text-align:left;padding:8px 10px;
+    border-bottom:1px solid var(--border);
+  }
+  thead th.num, td.num{text-align:right;}
+  tbody tr{border-bottom:1px solid var(--border-soft);}
+  tbody tr:nth-child(odd){background:var(--row-alt);}
+  tbody tr:nth-child(even){background:var(--row);}
+  tbody tr.loss-row{background:var(--loss-bg) !important;}
+  td{padding:9px 10px;font-size:13px;vertical-align:middle;}
+  td.name{font-weight:700;color:var(--text);}
+  td.name .flag{
+    display:inline-block;margin-left:8px;font-family:'Barlow Condensed',sans-serif;
+    font-size:10px;letter-spacing:1px;padding:2px 6px;border-radius:2px;
+    background:var(--loss);color:var(--bg);text-transform:uppercase;
+  }
+  .qty-zero{color:var(--text-faint);}
+  .actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;}
+
+  .editable{
+    background:transparent;border:none;border-bottom:1px dashed var(--border);
+    color:var(--text);font-family:'Space Mono',monospace;font-size:13px;
+    width:72px;text-align:right;padding:2px 2px;
+  }
+  .editable:focus{outline:none;border-color:var(--amber);}
+
+  .empty{
+    padding:30px;text-align:center;color:var(--text-faint);
+    border:1px dashed var(--border);font-family:'Barlow Condensed',sans-serif;
+    letter-spacing:1px;text-transform:uppercase;font-size:13px;
+  }
+
+  .section-title{
+    font-family:'Barlow Condensed', sans-serif;font-size:16px;font-weight:700;
+    letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);
+    margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border-soft);
+    display:flex;justify-content:space-between;align-items:center;
+  }
+
+  .overlay{
+    position:fixed;inset:0;background:rgba(10,9,7,0.72);
+    display:none;align-items:center;justify-content:center;z-index:50;padding:16px;
+  }
+  .overlay.show{display:flex;}
+  .modal{background:var(--panel);border:1px solid var(--border);width:100%;max-width:380px;padding:20px;}
+  .modal h3{
+    font-family:'Barlow Condensed', sans-serif;text-transform:uppercase;
+    letter-spacing:1.5px;font-size:18px;margin:0 0 14px;color:var(--amber);
+  }
+  .field{margin-bottom:12px;}
+  .field label{
+    display:block;font-family:'Barlow Condensed', sans-serif;font-size:11px;
+    letter-spacing:1.5px;text-transform:uppercase;color:var(--text-faint);margin-bottom:4px;
+  }
+  .field input, .field select{
+    width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);
+    padding:8px 10px;font-family:'Space Mono',monospace;font-size:13px;
+  }
+  .field input:focus, .field select:focus{outline:none;border-color:var(--amber);}
+  .field-note{font-size:11px;color:var(--text-faint);margin-top:4px;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;}
+  .modal-err{color:var(--loss);font-size:12px;margin-top:8px;display:none;}
+
+  .banner{
+    border:1px dashed var(--amber-dim);background:rgba(217,164,65,0.06);
+    padding:12px 14px;font-size:12px;color:var(--text-dim);margin-bottom:20px;
+    display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;
+  }
+  .banner button{
+    background:none;border:none;color:var(--amber-dim);cursor:pointer;
+    font-family:'Barlow Condensed',sans-serif;font-size:11px;letter-spacing:1px;
+    text-transform:uppercase;text-decoration:underline;padding:0;
+  }
+
+  .log-row{color:var(--text-dim);}
+  .log-row.loss td{color:var(--loss);}
+  .footer-note{text-align:center;color:var(--text-faint);font-size:11px;letter-spacing:1px;margin-top:30px;}
+  ::selection{background:var(--amber);color:var(--bg);}
+  @media(max-width:640px){
+    .ticker{grid-template-columns:repeat(2,1fr);}
+    table{font-size:12px;}
+    thead th, td{padding:7px 6px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="stamp-header">
+    <div>
+      <h1>CASSANOVA <span>LEDGER</span></h1>
+      <div class="sub">Active Manifest — Build / Stock / Move</div>
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:16px;">
+      <div class="stamp-meta">
+        BADGE OF NO ONE · OFF THE BOOKS<br>
+        <span id="itemCount">0</span> LINES ON HAND
+      </div>
+      <button class="btn small" id="lockBtn" onclick="promptUnlock()">🔒 Owner Login</button>
+    </div>
+  </div>
+
+  <div id="ownerOnlyArea" style="display:none;">
+    <div id="firstRunBanner" class="banner" style="display:none;">
+      <span>No items saved yet. Load the starter list below and set your real cost per item so profit numbers mean something.</span>
+      <button onclick="loadStarterList()">Load Starter List</button>
+    </div>
+
+    <div class="ticker">
+      <div class="cell"><div class="label">Stock Value (at sale price)</div><div class="value v-neutral" id="tStockValue">$0</div></div>
+      <div class="cell"><div class="label">Cost Basis on Hand</div><div class="value v-neutral" id="tCostBasis">$0</div></div>
+      <div class="cell"><div class="label">Unrealized P/L</div><div class="value" id="tUnrealized">$0</div></div>
+      <div class="cell"><div class="label">Realized P/L (all sales)</div><div class="value" id="tRealized">$0</div></div>
+    </div>
+
+    <div class="tabs" id="tabs"></div>
+
+    <div class="toolbar">
+      <div style="font-family:'Barlow Condensed',sans-serif;letter-spacing:1px;color:var(--text-faint);font-size:12px;text-transform:uppercase;" id="tabHint"></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn ghost small" onclick="toggleLog()">Sales Log</button>
+        <button class="btn ghost small" onclick="confirmReset()">Reset Data</button>
+        <button class="btn primary" onclick="openAddItem()">+ Add Item</button>
+      </div>
+    </div>
+
+    <table id="invTable">
+      <thead>
+        <tr>
+          <th>Item</th><th class="num">MSRP</th><th class="num">Sale Price</th>
+          <th class="num">Cost / Unit</th><th class="num">Qty on Hand</th>
+          <th class="num">Stock Value</th><th class="num">Margin / Unit</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="invBody"></tbody>
+    </table>
+    <div id="emptyState" class="empty" style="display:none;">No items in this category yet. Add one above.</div>
+
+    <div id="logSection" style="display:none;">
+      <div class="section-title">Sales Log <span id="logCount" style="color:var(--text-faint);font-weight:400;font-size:12px;"></span></div>
+      <table>
+        <thead><tr><th>Date</th><th>Item</th><th class="num">Qty</th><th class="num">Sale Price</th><th class="num">Cost</th><th class="num">Profit/Loss</th></tr></thead>
+        <tbody id="logBody"></tbody>
+      </table>
+    </div>
+  </div><!-- /ownerOnlyArea -->
+
+  <div id="ordersSection">
+    <div class="banner" style="border-color:var(--loss);background:rgba(196,70,43,0.06);">
+      <span>Stock, prices, and the order form below are public. Order info (name, phone, delivery date) is only visible to you once unlocked.</span>
+    </div>
+
+    <div class="section-title">Available Inventory</div>
+    <table>
+      <thead><tr><th>Item</th><th>Category</th><th class="num">Available</th><th class="num">Price</th></tr></thead>
+      <tbody id="catalogBody"></tbody>
+    </table>
+    <div id="catalogEmpty" class="empty" style="display:none;">Nothing in stock right now — check back soon.</div>
+
+    <div class="section-title" style="margin-top:26px;">Place an Order</div>
+    <div style="background:var(--panel);border:1px solid var(--border);padding:18px;margin-bottom:26px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;max-width:640px;">
+        <div class="field"><label>IC Name</label><input type="text" id="orderName" placeholder="Character name"></div>
+        <div class="field"><label>IC Phone Number</label><input type="text" id="orderPhone" placeholder="555-0123"></div>
+        <div class="field"><label>Requested Delivery Date</label><input type="date" id="orderDate"></div>
+      </div>
+
+      <div class="section-title" style="margin-top:6px;font-size:14px;">Pick Your Items</div>
+      <table>
+        <thead><tr><th>Item</th><th class="num">Available</th><th class="num">Price</th><th class="num">Qty Wanted</th></tr></thead>
+        <tbody id="orderPickerBody"></tbody>
+      </table>
+
+      <div style="text-align:right;margin-top:10px;font-family:'Barlow Condensed',sans-serif;letter-spacing:1px;text-transform:uppercase;font-size:13px;color:var(--text-dim);">
+        Order Total: <span id="orderTotal" style="color:var(--amber);font-family:'Space Mono',monospace;font-size:16px;">$0</span>
+      </div>
+
+      <div class="modal-err" id="orderErr">Enter a name and pick at least one item within what's available.</div>
+      <div class="modal-err" id="orderOk" style="color:var(--profit);">Order submitted.</div>
+      <button class="btn primary" style="width:100%;margin-top:12px;" onclick="submitOrder()">Submit Order</button>
+    </div>
+
+    <div id="ordersManageArea" style="display:none;">
+      <div class="section-title">Incoming Orders <span id="orderCount" style="color:var(--text-faint);font-weight:400;font-size:12px;"></span></div>
+      <table>
+        <thead><tr><th>Submitted</th><th>IC Name</th><th>Phone</th><th>Items</th><th class="num">Total</th><th>Delivery Date</th><th>Status</th><th></th></tr></thead>
+        <tbody id="orderBody"></tbody>
+      </table>
+      <div id="ordersEmpty" class="empty" style="display:none;">No orders yet.</div>
+    </div>
+  </div>
+
+  <div class="footer-note" id="footerNote">Catalog and order form are public. Inventory management is locked to the owner PIN.</div>
+</div>
+
+<!-- Owner Unlock Modal -->
+<div class="overlay" id="unlockOverlay">
+  <div class="modal">
+    <h3>Owner Login</h3>
+    <div class="field"><label>PIN</label><input type="password" id="pinInput" placeholder="••••" autocomplete="off"></div>
+    <div class="modal-err" id="pinErr">Incorrect PIN.</div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal('unlockOverlay')">Cancel</button>
+      <button class="btn primary" onclick="attemptUnlock()">Unlock</button>
+    </div>
+  </div>
+</div>
+
+<!-- Generic Confirm Modal -->
+<div class="overlay" id="confirmOverlay">
+  <div class="modal">
+    <h3>Confirm</h3>
+    <p id="confirmMsg" style="font-size:13px;color:var(--text-dim);line-height:1.5;"></p>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal('confirmOverlay')">Cancel</button>
+      <button class="btn danger" id="confirmYesBtn">Yes, do it</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Item Modal -->
+<div class="overlay" id="addOverlay">
+  <div class="modal">
+    <h3>Add Item</h3>
+    <div class="field">
+      <label>Category</label>
+      <select id="addCategory">
+        <option value="Recycling Materials">Recycling Materials</option>
+        <option value="Drug Items">Drug Items</option>
+        <option value="Misc Items">Misc Items</option>
+      </select>
+    </div>
+    <div class="field"><label>Item Name</label><input type="text" id="addName" placeholder="e.g. Copper"></div>
+    <div class="field"><label>MSRP ($)</label><input type="number" id="addMsrp" placeholder="0"></div>
+    <div class="field"><label>Current Sale Price ($)</label><input type="number" id="addSale" placeholder="0"></div>
+    <div class="field"><label>Cost per Unit ($)</label><input type="number" id="addCost" placeholder="0"></div>
+    <div class="field"><label>Starting Quantity</label><input type="number" id="addQty" placeholder="0"></div>
+    <div class="modal-err" id="addErr">Fill in an item name.</div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal('addOverlay')">Cancel</button>
+      <button class="btn primary" onclick="submitAddItem()">Add to Manifest</button>
+    </div>
+  </div>
+</div>
+
+<!-- Restock Modal -->
+<div class="overlay" id="restockOverlay">
+  <div class="modal">
+    <h3>Restock <span id="restockName" style="color:var(--text);"></span></h3>
+    <div class="field"><label>Quantity Built / Added</label><input type="number" id="restockQty" placeholder="0"></div>
+    <div class="field">
+      <label>Cost per Unit This Batch ($)</label>
+      <input type="number" id="restockCost" placeholder="0">
+      <div class="field-note">If cost differs from before, this blends into a weighted average cost/unit.</div>
+    </div>
+    <div class="modal-err" id="restockErr">Enter a quantity greater than 0.</div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal('restockOverlay')">Cancel</button>
+      <button class="btn primary" onclick="submitRestock()">Add to Stock</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sell Modal -->
+<div class="overlay" id="sellOverlay">
+  <div class="modal">
+    <h3>Sell <span id="sellName" style="color:var(--text);"></span></h3>
+    <div class="field">
+      <label>Quantity Sold</label>
+      <input type="number" id="sellQty" placeholder="0">
+      <div class="field-note" id="sellStockNote"></div>
+    </div>
+    <div class="field"><label>Sale Price per Unit ($)</label><input type="number" id="sellPrice" placeholder="0"></div>
+    <div class="modal-err" id="sellErr">Enter a valid quantity in stock.</div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal('sellOverlay')">Cancel</button>
+      <button class="btn primary" onclick="submitSell()">Log Sale</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const CATEGORIES = ['Recycling Materials','Drug Items','Misc Items'];
+const TABS = ['All', ...CATEGORIES];
+const ORDER_STATUSES = ['Pending','Fulfilled','Cancelled'];
+
+let state = { items: [], sales: [] };   // owner-only, populated after unlock
+let catalog = [];                        // public, always populated
+let orders = [];                         // owner-only, populated after unlock
+let activeTab = 'All';
+let logOpen = false;
+let pendingItemId = null;
+let unlocked = false;
+let ownerPin = null; // held in memory only — never written to any storage, cleared on lock/reload
+
+// ---------- API helpers ----------
+async function api(path, { method = 'GET', body, auth = false } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (auth) headers['X-Owner-Pin'] = ownerPin || '';
+  const res = await fetch('/api/' + path, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    let err = {};
+    try { err = await res.json(); } catch (e) {}
+    throw new Error(err.error || ('Request failed: ' + res.status));
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+function seedData(){
+  const mk = (category, name, msrp, sale, cost=0, qty=0) => ({
+    id: crypto.randomUUID(), category, name, msrp, salePrice: sale, cost, qty
+  });
+  return [
+    mk('Recycling Materials','Copper',10,15),
+    mk('Recycling Materials','Rubber',10,15),
+    mk('Recycling Materials','Plastic',10,15),
+    mk('Recycling Materials','Glass',5,9),
+    mk('Recycling Materials','Aluminum',10,15),
+    mk('Recycling Materials','Iron',10,15),
+    mk('Recycling Materials','Steel',10,15),
+    mk('Recycling Materials','Scrap Metal',75,100),
+    mk('Drug Items','30/30/30 Bags',9000,9000),
+    mk('Drug Items','Ethanol (per can)',100,100),
+    mk('Drug Items','Acetone (per can)',100,100),
+    mk('Drug Items','Ethanol(300)/Acetone(150) Bundle',45000,45000),
+    mk('Drug Items','Coke Leaves (per leaf)',100,100),
+    mk('Drug Items','Ammonia',300,300),
+    mk('Misc Items','Springs',250,250),
+  ];
+}
+
+// ---------- Load ----------
+async function loadCatalog(){
+  try{
+    catalog = await api('catalog');
+  } catch(e){
+    catalog = [];
+    console.error('Failed to load catalog', e);
+  }
+  renderCatalog();
+  renderOrderPicker();
+}
+
+async function loadOwnerData(){
+  const ledger = await api('ledger', { auth: true });
+  state = ledger && ledger.items ? ledger : { items: [], sales: [] };
+  document.getElementById('firstRunBanner').style.display = state.items.length === 0 ? 'flex' : 'none';
+
+  const ordersData = await api('orders', { auth: true });
+  orders = Array.isArray(ordersData) ? ordersData : [];
+}
+
+async function loadStarterList(){
+  state = { items: seedData(), sales: [] };
+  await saveData();
+  document.getElementById('firstRunBanner').style.display = 'none';
+  render();
+}
+
+async function saveData(){
+  await api('ledger', { method: 'POST', auth: true, body: state });
+  await loadCatalog(); // refresh the public view so it reflects the change immediately
+}
+
+async function saveOrders(){
+  // orders.js has no bulk-save endpoint by design (each write is a targeted
+  // PATCH/DELETE/POST) — this exists only for local re-render convenience.
+}
+
+// ---------- Lock / unlock ----------
+function promptUnlock(){
+  document.getElementById('pinInput').value = '';
+  document.getElementById('pinErr').style.display = 'none';
+  openModal('unlockOverlay');
+}
+
+async function attemptUnlock(){
+  const val = document.getElementById('pinInput').value;
+  try{
+    await api('login', { method: 'POST', body: { pin: val } });
+    ownerPin = val;
+    unlocked = true;
+    closeModal('unlockOverlay');
+    await updateLockUI();
+  } catch(e){
+    document.getElementById('pinErr').textContent = e.message || 'Incorrect PIN.';
+    document.getElementById('pinErr').style.display = 'block';
+  }
+}
+
+function lockApp(){
+  unlocked = false;
+  ownerPin = null;
+  state = { items: [], sales: [] };
+  orders = [];
+  updateLockUI();
+}
+
+async function updateLockUI(){
+  document.getElementById('ownerOnlyArea').style.display = unlocked ? 'block' : 'none';
+  document.getElementById('ordersManageArea').style.display = unlocked ? 'block' : 'none';
+  const btn = document.getElementById('lockBtn');
+  btn.textContent = unlocked ? '🔓 Lock' : '🔒 Owner Login';
+  btn.onclick = unlocked ? lockApp : promptUnlock;
+  document.getElementById('footerNote').textContent = unlocked
+    ? 'Owner view unlocked. Lock up before handing off the device.'
+    : 'Catalog and order form are public. Inventory management is locked to the owner PIN.';
+  if(unlocked){
+    await loadOwnerData();
+    render();
+  }
+}
+
+// ---------- Generic confirm modal ----------
+let confirmCallback = null;
+function showConfirm(msg, cb){
+  document.getElementById('confirmMsg').textContent = msg;
+  confirmCallback = cb;
+  const yesBtn = document.getElementById('confirmYesBtn');
+  yesBtn.onclick = () => { closeModal('confirmOverlay'); if(confirmCallback) confirmCallback(); };
+  openModal('confirmOverlay');
+}
+
+function money(n){
+  const v = Number(n)||0;
+  const sign = v < 0 ? '-' : '';
+  return sign + '$' + Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:2});
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function openModal(id){ document.getElementById(id).classList.add('show'); }
+function closeModal(id){
+  document.getElementById(id).classList.remove('show');
+  document.getElementById('addErr').style.display='none';
+  document.getElementById('restockErr').style.display='none';
+  document.getElementById('sellErr').style.display='none';
+}
+
+// ---------- Owner ledger UI ----------
+function renderTabs(){
+  const tabs = document.getElementById('tabs');
+  tabs.innerHTML = TABS.map(c =>
+    `<div class="tab ${c===activeTab?'active':''}" onclick="setTab('${c.replace(/'/g,"\\'")}')">${c}</div>`
+  ).join('');
+  document.getElementById('tabHint').textContent = activeTab === 'All' ? 'Showing all categories' : 'Category: ' + activeTab;
+}
+
+function setTab(c){ activeTab = c; render(); }
+
+function toggleLog(){
+  logOpen = !logOpen;
+  document.getElementById('logSection').style.display = logOpen ? 'block' : 'none';
+  renderLog();
+}
+
+function render(){
+  renderTabs();
+
+  const body = document.getElementById('invBody');
+  const items = state.items.filter(i => activeTab==='All' || i.category===activeTab);
+  document.getElementById('itemCount').textContent = state.items.length;
+
+  if(items.length === 0){
+    body.innerHTML = '';
+    document.getElementById('emptyState').style.display = 'block';
+  } else {
+    document.getElementById('emptyState').style.display = 'none';
+    body.innerHTML = items.map(rowHtml).join('');
+  }
+
+  let stockValue = 0, costBasis = 0;
+  state.items.forEach(i => { stockValue += i.salePrice*i.qty; costBasis += i.cost*i.qty; });
+  const unrealized = stockValue - costBasis;
+  const realized = state.sales.reduce((s,r)=>s+r.profit,0);
+
+  document.getElementById('tStockValue').textContent = money(stockValue);
+  document.getElementById('tCostBasis').textContent = money(costBasis);
+  const uEl = document.getElementById('tUnrealized');
+  uEl.textContent = money(unrealized);
+  uEl.className = 'value ' + (unrealized>0?'v-pos':unrealized<0?'v-neg':'v-neutral');
+  const rEl = document.getElementById('tRealized');
+  rEl.textContent = money(realized);
+  rEl.className = 'value ' + (realized>0?'v-pos':realized<0?'v-neg':'v-neutral');
+
+  renderLog();
+  renderOrders();
+}
+
+function rowHtml(i){
+  const margin = i.salePrice - i.cost;
+  const stockVal = i.salePrice * i.qty;
+  const isLoss = margin < 0;
+  return `
+    <tr class="${isLoss?'loss-row':''}">
+      <td class="name">${escapeHtml(i.name)}${isLoss?'<span class="flag">Selling at loss</span>':''}</td>
+      <td class="num">${money(i.msrp)}</td>
+      <td class="num"><input class="editable" type="number" value="${i.salePrice}" onchange="updateField('${i.id}','salePrice',this.value)"></td>
+      <td class="num"><input class="editable" type="number" value="${i.cost}" onchange="updateField('${i.id}','cost',this.value)"></td>
+      <td class="num ${i.qty===0?'qty-zero':''}">${i.qty}</td>
+      <td class="num">${money(stockVal)}</td>
+      <td class="num" style="color:${margin>0?'var(--profit)':margin<0?'var(--loss)':'var(--text-dim)'}">${money(margin)}</td>
+      <td>
+        <div class="actions">
+          <button class="btn small ghost" onclick="openRestock('${i.id}')">Restock</button>
+          <button class="btn small primary" onclick="openSell('${i.id}')">Sell</button>
+          <button class="btn small danger" onclick="deleteItem('${i.id}')">✕</button>
+        </div>
+      </td>
+    </tr>`;
+}
+
+function renderLog(){
+  const logBody = document.getElementById('logBody');
+  if(!logBody) return;
+  const sorted = [...state.sales].sort((a,b)=> b.timestamp - a.timestamp).slice(0,80);
+  document.getElementById('logCount').textContent = state.sales.length ? `(${state.sales.length} total)` : '';
+  if(sorted.length===0){
+    logBody.innerHTML = `<tr><td colspan="6" style="color:var(--text-faint);text-align:center;padding:16px;">No sales logged yet.</td></tr>`;
+    return;
+  }
+  logBody.innerHTML = sorted.map(r => `
+    <tr class="log-row ${r.profit<0?'loss':''}">
+      <td>${new Date(r.timestamp).toLocaleDateString()} ${new Date(r.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</td>
+      <td>${escapeHtml(r.itemName)}</td>
+      <td class="num">${r.qty}</td>
+      <td class="num">${money(r.salePrice)}</td>
+      <td class="num">${money(r.cost)}</td>
+      <td class="num" style="color:${r.profit>=0?'var(--profit)':'var(--loss)'}">${money(r.profit)}</td>
+    </tr>`).join('');
+}
+
+async function updateField(id, field, value){
+  const item = state.items.find(i=>i.id===id);
+  if(!item) return;
+  const num = parseFloat(value);
+  item[field] = isNaN(num) ? 0 : num;
+  await saveData();
+  render();
+}
+
+function deleteItem(id){
+  const item = state.items.find(i=>i.id===id);
+  if(!item) return;
+  showConfirm(`Remove "${item.name}" from the manifest? This won't touch its past sales log.`, async () => {
+    state.items = state.items.filter(i=>i.id!==id);
+    await saveData();
+    render();
+  });
+}
+
+function openAddItem(){
+  document.getElementById('addName').value='';
+  document.getElementById('addMsrp').value='';
+  document.getElementById('addSale').value='';
+  document.getElementById('addCost').value='';
+  document.getElementById('addQty').value='';
+  if(activeTab !== 'All') document.getElementById('addCategory').value = activeTab;
+  openModal('addOverlay');
+}
+
+async function submitAddItem(){
+  const name = document.getElementById('addName').value.trim();
+  if(!name){ document.getElementById('addErr').style.display='block'; return; }
+  const item = {
+    id: crypto.randomUUID(),
+    category: document.getElementById('addCategory').value,
+    name,
+    msrp: parseFloat(document.getElementById('addMsrp').value)||0,
+    salePrice: parseFloat(document.getElementById('addSale').value)||0,
+    cost: parseFloat(document.getElementById('addCost').value)||0,
+    qty: parseFloat(document.getElementById('addQty').value)||0,
+  };
+  state.items.push(item);
+  await saveData();
+  closeModal('addOverlay');
+  render();
+}
+
+function openRestock(id){
+  pendingItemId = id;
+  const item = state.items.find(i=>i.id===id);
+  document.getElementById('restockName').textContent = '— ' + item.name;
+  document.getElementById('restockQty').value='';
+  document.getElementById('restockCost').value = item.cost;
+  openModal('restockOverlay');
+}
+
+async function submitRestock(){
+  const item = state.items.find(i=>i.id===pendingItemId);
+  if(!item) return;
+  const addQty = parseFloat(document.getElementById('restockQty').value);
+  const batchCost = parseFloat(document.getElementById('restockCost').value);
+  if(!addQty || addQty<=0){ document.getElementById('restockErr').style.display='block'; return; }
+  const newCost = isNaN(batchCost) ? item.cost : batchCost;
+  const totalOldValue = item.cost * item.qty;
+  const totalNewValue = newCost * addQty;
+  const newQty = item.qty + addQty;
+  item.cost = newQty>0 ? (totalOldValue + totalNewValue) / newQty : newCost;
+  item.qty = newQty;
+  await saveData();
+  closeModal('restockOverlay');
+  render();
+}
+
+function openSell(id){
+  pendingItemId = id;
+  const item = state.items.find(i=>i.id===id);
+  document.getElementById('sellName').textContent = '— ' + item.name;
+  document.getElementById('sellQty').value='';
+  document.getElementById('sellPrice').value = item.salePrice;
+  document.getElementById('sellStockNote').textContent = `${item.qty} in stock`;
+  openModal('sellOverlay');
+}
+
+async function submitSell(){
+  const item = state.items.find(i=>i.id===pendingItemId);
+  if(!item) return;
+  const qty = parseFloat(document.getElementById('sellQty').value);
+  const price = parseFloat(document.getElementById('sellPrice').value);
+  if(!qty || qty<=0 || qty>item.qty){ document.getElementById('sellErr').style.display='block'; return; }
+  const salePrice = isNaN(price) ? item.salePrice : price;
+  const profit = (salePrice - item.cost) * qty;
+  item.qty -= qty;
+  state.sales.push({
+    id: crypto.randomUUID(),
+    itemId: item.id, itemName: item.name,
+    qty, salePrice, cost: item.cost, profit,
+    timestamp: Date.now()
+  });
+  await saveData();
+  closeModal('sellOverlay');
+  render();
+}
+
+function confirmReset(){
+  showConfirm('Wipe all items and sales history and reload the starter list? This cannot be undone.', async () => {
+    state = { items: seedData(), sales: [] };
+    await saveData();
+    document.getElementById('firstRunBanner').style.display = 'none';
+    render();
+  });
+}
+
+// ---------- Public catalog + order form ----------
+function renderCatalog(){
+  const body = document.getElementById('catalogBody');
+  const sorted = [...catalog].sort((a,b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  if(sorted.length === 0){
+    body.innerHTML = '';
+    document.getElementById('catalogEmpty').style.display = 'block';
+    return;
+  }
+  document.getElementById('catalogEmpty').style.display = 'none';
+  body.innerHTML = sorted.map(i => `
+    <tr>
+      <td class="name">${escapeHtml(i.name)}</td>
+      <td style="color:var(--text-faint);font-size:12px;">${escapeHtml(i.category)}</td>
+      <td class="num ${i.qty===0?'qty-zero':''}">${i.qty>0 ? i.qty : 'Out of stock'}</td>
+      <td class="num">${money(i.salePrice)}</td>
+    </tr>`).join('');
+}
+
+function renderOrderPicker(){
+  const prevQty = {};
+  catalog.forEach(i => {
+    const el = document.getElementById('pickQty_' + i.id);
+    if(el && el.value) prevQty[i.id] = el.value;
+  });
+
+  const sorted = [...catalog].sort((a,b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  const pickerBody = document.getElementById('orderPickerBody');
+  pickerBody.innerHTML = sorted.map(i => `
+    <tr>
+      <td class="name">${escapeHtml(i.name)}</td>
+      <td class="num ${i.qty===0?'qty-zero':''}">${i.qty}</td>
+      <td class="num">${money(i.salePrice)}</td>
+      <td class="num">
+        <input class="editable" type="number" min="0" max="${i.qty}" step="1"
+          id="pickQty_${i.id}" value="${prevQty[i.id]||''}" placeholder="0"
+          ${i.qty===0?'disabled':''} oninput="updateOrderTotal()">
+      </td>
+    </tr>`).join('');
+  updateOrderTotal();
+}
+
+function updateOrderTotal(){
+  let total = 0;
+  catalog.forEach(i => {
+    const el = document.getElementById('pickQty_' + i.id);
+    const qty = el ? parseInt(el.value) || 0 : 0;
+    total += qty * i.salePrice;
+  });
+  const totalEl = document.getElementById('orderTotal');
+  if(totalEl) totalEl.textContent = money(total);
+}
+
+async function submitOrder(){
+  const icName = document.getElementById('orderName').value.trim();
+  const icPhone = document.getElementById('orderPhone').value.trim();
+  const deliveryDate = document.getElementById('orderDate').value;
+
+  const lines = [];
+  catalog.forEach(i => {
+    const el = document.getElementById('pickQty_' + i.id);
+    const qty = el ? parseInt(el.value) || 0 : 0;
+    if(qty > 0) lines.push({ itemId: i.id, qty });
+  });
+
+  const errEl = document.getElementById('orderErr');
+  const okEl = document.getElementById('orderOk');
+  okEl.style.display = 'none';
+
+  if(!icName || lines.length === 0){
+    errEl.textContent = 'Enter a name and pick at least one item within what\'s available.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  try{
+    await api('orders', { method: 'POST', body: { icName, icPhone, deliveryDate, lines } });
+    errEl.style.display = 'none';
+    okEl.style.display = 'block';
+    document.getElementById('orderName').value = '';
+    document.getElementById('orderPhone').value = '';
+    document.getElementById('orderDate').value = '';
+    await loadCatalog(); // stock display doesn't change from ordering, but refresh for consistency
+    if(unlocked){
+      orders = await api('orders', { auth: true });
+      renderOrders();
+    }
+  } catch(e){
+    errEl.textContent = e.message || 'Could not submit order — try again.';
+    errEl.style.display = 'block';
+  }
+}
+
+function renderOrders(){
+  const body = document.getElementById('orderBody');
+  if(!body) return;
+  document.getElementById('orderCount').textContent = orders.length ? `(${orders.length} total)` : '';
+  const sorted = [...orders].sort((a,b)=> b.submittedAt - a.submittedAt);
+  if(sorted.length === 0){
+    body.innerHTML = '';
+    document.getElementById('ordersEmpty').style.display = 'block';
+    return;
+  }
+  document.getElementById('ordersEmpty').style.display = 'none';
+  body.innerHTML = sorted.map(o => {
+    const lines = (o.lines||[]).map(l => `${l.qty}x ${escapeHtml(l.name)}`).join(', ');
+    const total = (o.lines||[]).reduce((s,l)=>s+l.qty*l.price,0);
+    return `
+    <tr>
+      <td>${new Date(o.submittedAt).toLocaleDateString()}</td>
+      <td>${escapeHtml(o.icName)}</td>
+      <td>${escapeHtml(o.icPhone||'—')}</td>
+      <td>${lines||'—'}</td>
+      <td class="num">${money(total)}</td>
+      <td>${o.deliveryDate ? escapeHtml(o.deliveryDate) : '—'}</td>
+      <td>
+        <select class="editable" style="width:110px;text-align:left;" onchange="updateOrderStatus('${o.id}',this.value)">
+          ${ORDER_STATUSES.map(s=>`<option value="${s}" ${s===o.status?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </td>
+      <td><button class="btn small danger" onclick="deleteOrder('${o.id}')">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function updateOrderStatus(id, status){
+  await api('orders', { method: 'PATCH', auth: true, body: { id, status } });
+  const o = orders.find(x=>x.id===id);
+  if(o) o.status = status;
+  renderOrders();
+}
+
+function deleteOrder(id){
+  showConfirm('Remove this order from the queue?', async () => {
+    await api('orders', { method: 'DELETE', auth: true, body: { id } });
+    orders = orders.filter(o=>o.id!==id);
+    renderOrders();
+  });
+}
+
+// ---------- Boot ----------
+(async function init(){
+  await loadCatalog();
+})();
+</script>
+</body>
+</html>
