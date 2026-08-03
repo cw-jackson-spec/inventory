@@ -1,0 +1,9 @@
+{
+  "name": "cassanova-ledger",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cassanova Ledger — inventory, sales, and order tracking with a Netlify Functions backend.",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
