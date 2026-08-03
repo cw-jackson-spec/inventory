@@ -1,13 +1,14 @@
 // Public endpoint. Anyone can hit this — it only ever returns what customers
 // should see: name, category, quantity available, and your sale price.
 // MSRP, cost, and margins never leave the ledger.js endpoint, which is PIN-gated.
-const { getStore } = require('@netlify/blobs');
+const { getStore, connectLambda } = require('@netlify/blobs');
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'GET') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
   try {
+    connectLambda(event); // links the Blobs client to this site's storage credentials
     const store = getStore('cassanova');
     const ledger = (await store.get('ledger', { type: 'json' })) || { items: [] };
     const items = Array.isArray(ledger.items) ? ledger.items : [];
