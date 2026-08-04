@@ -238,6 +238,7 @@
     <div class="toolbar">
       <div style="font-family:'Barlow Condensed',sans-serif;letter-spacing:1px;color:var(--text-faint);font-size:12px;text-transform:uppercase;" id="tabHint"></div>
       <div style="display:flex;gap:8px;">
+        <button class="btn small" id="orderToggleBtn" onclick="toggleOrders()">Orders: OFF</button>
         <button class="btn ghost small" onclick="toggleLog()">Sales Log</button>
         <button class="btn ghost small" onclick="confirmReset()">Reset Data</button>
         <button class="btn primary" onclick="openAddItem()">+ Add Item</button>
@@ -266,8 +267,8 @@
   </div><!-- /ownerOnlyArea -->
 
   <div id="ordersSection">
-    <div class="banner" style="border-color:var(--loss);background:rgba(196,70,43,0.06);">
-      <span>Stock, prices, and the order form below are public. Order info (name, phone, delivery date) is only visible to you once unlocked.</span>
+    <div class="banner" id="publicBanner">
+      <span id="publicBannerText">Stock and prices below are public.</span>
     </div>
 
     <div class="section-title">Available Inventory</div>
@@ -277,27 +278,29 @@
     </table>
     <div id="catalogEmpty" class="empty" style="display:none;">Nothing in stock right now — check back soon.</div>
 
-    <div class="section-title" style="margin-top:26px;">Place an Order</div>
-    <div style="background:var(--panel);border:1px solid var(--border);padding:18px;margin-bottom:26px;">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;max-width:640px;">
-        <div class="field"><label>IC Name</label><input type="text" id="orderName" placeholder="Character name"></div>
-        <div class="field"><label>IC Phone Number</label><input type="text" id="orderPhone" placeholder="555-0123"></div>
-        <div class="field"><label>Requested Delivery Date</label><input type="date" id="orderDate"></div>
+    <div id="orderFormPublic" style="display:none;">
+      <div class="section-title" style="margin-top:26px;">Place an Order</div>
+      <div style="background:var(--panel);border:1px solid var(--border);padding:18px;margin-bottom:26px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;max-width:640px;">
+          <div class="field"><label>IC Name</label><input type="text" id="orderName" placeholder="Character name"></div>
+          <div class="field"><label>IC Phone Number</label><input type="text" id="orderPhone" placeholder="555-0123"></div>
+          <div class="field"><label>Requested Delivery Date</label><input type="date" id="orderDate"></div>
+        </div>
+
+        <div class="section-title" style="margin-top:6px;font-size:14px;">Pick Your Items</div>
+        <table>
+          <thead><tr><th>Item</th><th class="num">Available</th><th class="num">Price</th><th class="num">Qty Wanted</th></tr></thead>
+          <tbody id="orderPickerBody"></tbody>
+        </table>
+
+        <div style="text-align:right;margin-top:10px;font-family:'Barlow Condensed',sans-serif;letter-spacing:1px;text-transform:uppercase;font-size:13px;color:var(--text-dim);">
+          Order Total: <span id="orderTotal" style="color:var(--amber);font-family:'Space Mono',monospace;font-size:16px;">$0</span>
+        </div>
+
+        <div class="modal-err" id="orderErr">Enter a name and pick at least one item within what's available.</div>
+        <div class="modal-err" id="orderOk" style="color:var(--profit);">Order submitted.</div>
+        <button class="btn primary" style="width:100%;margin-top:12px;" onclick="submitOrder()">Submit Order</button>
       </div>
-
-      <div class="section-title" style="margin-top:6px;font-size:14px;">Pick Your Items</div>
-      <table>
-        <thead><tr><th>Item</th><th class="num">Available</th><th class="num">Price</th><th class="num">Qty Wanted</th></tr></thead>
-        <tbody id="orderPickerBody"></tbody>
-      </table>
-
-      <div style="text-align:right;margin-top:10px;font-family:'Barlow Condensed',sans-serif;letter-spacing:1px;text-transform:uppercase;font-size:13px;color:var(--text-dim);">
-        Order Total: <span id="orderTotal" style="color:var(--amber);font-family:'Space Mono',monospace;font-size:16px;">$0</span>
-      </div>
-
-      <div class="modal-err" id="orderErr">Enter a name and pick at least one item within what's available.</div>
-      <div class="modal-err" id="orderOk" style="color:var(--profit);">Order submitted.</div>
-      <button class="btn primary" style="width:100%;margin-top:12px;" onclick="submitOrder()">Submit Order</button>
     </div>
 
     <div id="ordersManageArea" style="display:none;">
@@ -404,8 +407,9 @@ const CATEGORIES = ['Recycling Materials','Drug Items','Misc Items'];
 const TABS = ['All', ...CATEGORIES];
 const ORDER_STATUSES = ['Pending','Fulfilled','Cancelled'];
 
-let state = { items: [], sales: [] };   // owner-only, populated after unlock
+let state = { items: [], sales: [], ordersEnabled: false };   // owner-only, populated after unlock
 let catalog = [];                        // public, always populated
+let ordersEnabled = false;               // public flag — controls whether the order form shows at all
 let orders = [];                         // owner-only, populated after unlock
 let activeTab = 'All';
 let logOpen = false;
@@ -457,18 +461,40 @@ function seedData(){
 // ---------- Load ----------
 async function loadCatalog(){
   try{
-    catalog = await api('catalog');
+    const data = await api('catalog');
+    catalog = (data && data.items) ? data.items : [];
+    ordersEnabled = Boolean(data && data.ordersEnabled);
   } catch(e){
     catalog = [];
+    ordersEnabled = false;
     console.error('Failed to load catalog', e);
   }
   renderCatalog();
   renderOrderPicker();
+  updatePublicOrderVisibility();
+}
+
+function updatePublicOrderVisibility(){
+  document.getElementById('orderFormPublic').style.display = ordersEnabled ? 'block' : 'none';
+  document.getElementById('publicBannerText').textContent = ordersEnabled
+    ? 'Stock, prices, and the order form below are public. Order info (name, phone, delivery date) is only visible to you once unlocked.'
+    : 'Stock and prices below are public.';
+  const toggleBtn = document.getElementById('orderToggleBtn');
+  if(toggleBtn){
+    toggleBtn.textContent = ordersEnabled ? 'Orders: ON' : 'Orders: OFF';
+    toggleBtn.style.color = ordersEnabled ? 'var(--profit)' : 'var(--text-dim)';
+    toggleBtn.style.borderColor = ordersEnabled ? 'var(--profit)' : 'var(--border)';
+  }
+}
+
+async function toggleOrders(){
+  state.ordersEnabled = !state.ordersEnabled;
+  await saveData();
 }
 
 async function loadOwnerData(){
   const ledger = await api('ledger', { auth: true });
-  state = ledger && ledger.items ? ledger : { items: [], sales: [] };
+  state = ledger && ledger.items ? ledger : { items: [], sales: [], ordersEnabled: false };
   document.getElementById('firstRunBanner').style.display = state.items.length === 0 ? 'flex' : 'none';
 
   const ordersData = await api('orders', { auth: true });
@@ -476,7 +502,7 @@ async function loadOwnerData(){
 }
 
 async function loadStarterList(){
-  state = { items: seedData(), sales: [] };
+  state = { items: seedData(), sales: [], ordersEnabled: state.ordersEnabled || false };
   await saveData();
   document.getElementById('firstRunBanner').style.display = 'none';
   render();
@@ -485,6 +511,7 @@ async function loadStarterList(){
 async function saveData(){
   await api('ledger', { method: 'POST', auth: true, body: state });
   await loadCatalog(); // refresh the public view so it reflects the change immediately
+  render();
 }
 
 async function saveOrders(){
