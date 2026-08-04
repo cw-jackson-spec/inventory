@@ -462,8 +462,15 @@ function seedData(){
 async function loadCatalog(){
   try{
     const data = await api('catalog');
-    catalog = (data && data.items) ? data.items : [];
-    ordersEnabled = Boolean(data && data.ordersEnabled);
+    if(Array.isArray(data)){
+      // Backend still on the old response shape (plain array) — degrade
+      // gracefully instead of breaking, so a partial deploy never blanks the page.
+      catalog = data;
+      ordersEnabled = false;
+    } else {
+      catalog = (data && Array.isArray(data.items)) ? data.items : [];
+      ordersEnabled = Boolean(data && data.ordersEnabled);
+    }
   } catch(e){
     catalog = [];
     ordersEnabled = false;
@@ -488,8 +495,19 @@ function updatePublicOrderVisibility(){
 }
 
 async function toggleOrders(){
+  const btn = document.getElementById('orderToggleBtn');
+  const previous = state.ordersEnabled;
   state.ordersEnabled = !state.ordersEnabled;
-  await saveData();
+  if(btn) btn.disabled = true;
+  try{
+    await saveData();
+  } catch(e){
+    state.ordersEnabled = previous; // revert locally since the save failed
+    console.error('toggleOrders failed', e);
+    alert('Could not update the orders toggle: ' + (e.message || 'unknown error') + '\n\nOpen dev tools (F12) > Console for details.');
+  } finally {
+    if(btn) btn.disabled = false;
+  }
 }
 
 async function loadOwnerData(){
