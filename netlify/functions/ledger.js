@@ -3,6 +3,8 @@
 // and updates the full ledger: MSRP, cost/unit, quantities, and the sales log.
 const { getStore, connectLambda } = require('@netlify/blobs');
 
+const DEFAULT_PUBLIC_CATEGORIES = ['Recycling Materials', 'Drug Items'];
+
 function isAuthorized(event) {
   const pin = event.headers['x-owner-pin'] || event.headers['X-Owner-Pin'];
   return Boolean(process.env.OWNER_PIN) && pin === process.env.OWNER_PIN;
@@ -20,6 +22,7 @@ exports.handler = async function (event) {
     if (event.httpMethod === 'GET') {
       const ledger = (await store.get('ledger', { type: 'json' })) || {
         items: [], sales: [], ordersEnabled: false, recipes: [], adjustments: [], craftLog: [],
+        publicCategories: DEFAULT_PUBLIC_CATEGORIES,
       };
       return {
         statusCode: 200,
@@ -31,6 +34,7 @@ exports.handler = async function (event) {
           recipes: Array.isArray(ledger.recipes) ? ledger.recipes : [],
           adjustments: Array.isArray(ledger.adjustments) ? ledger.adjustments : [],
           craftLog: Array.isArray(ledger.craftLog) ? ledger.craftLog : [],
+          publicCategories: Array.isArray(ledger.publicCategories) ? ledger.publicCategories : DEFAULT_PUBLIC_CATEGORIES,
         }),
       };
     }
@@ -52,6 +56,7 @@ exports.handler = async function (event) {
         recipes: Array.isArray(body.recipes) ? body.recipes : [],
         adjustments: Array.isArray(body.adjustments) ? body.adjustments : [],
         craftLog: Array.isArray(body.craftLog) ? body.craftLog : [],
+        publicCategories: Array.isArray(body.publicCategories) ? body.publicCategories : DEFAULT_PUBLIC_CATEGORIES,
       });
       return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true }) };
     }

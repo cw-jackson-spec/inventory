@@ -6,6 +6,8 @@
 const { getStore, connectLambda } = require('@netlify/blobs');
 const crypto = require('crypto');
 
+const DEFAULT_PUBLIC_CATEGORIES = ['Recycling Materials', 'Drug Items'];
+
 function isAuthorized(event) {
   const pin = event.headers['x-owner-pin'] || event.headers['X-Owner-Pin'];
   return Boolean(process.env.OWNER_PIN) && pin === process.env.OWNER_PIN;
@@ -33,13 +35,20 @@ exports.handler = async function (event) {
         return { statusCode: 400, body: JSON.stringify({ error: 'icName and at least one item are required' }) };
       }
 
-      const ledger = (await store.get('ledger', { type: 'json' })) || { items: [] };
+      const ledger = (await store.get('ledger', { type: 'json' })) || { items: [], ordersEnabled: false };
+
+      if (!ledger.ordersEnabled) {
+        return { statusCode: 403, body: JSON.stringify({ error: 'Ordering is currently turned off.' }) };
+      }
+
       const items = Array.isArray(ledger.items) ? ledger.items : [];
+      const publicCategories = Array.isArray(ledger.publicCategories) ? ledger.publicCategories : DEFAULT_PUBLIC_CATEGORIES;
 
       const cleanLines = [];
       for (const line of requestedLines) {
         const item = items.find((i) => i.id === line.itemId);
         if (!item) continue;
+        if (!publicCategories.includes(item.category)) continue; // not a publicly orderable category
         const requestedQty = parseInt(line.qty, 10) || 0;
         const qty = Math.max(0, Math.min(requestedQty, item.qty));
         if (qty > 0) {
