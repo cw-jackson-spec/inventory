@@ -236,9 +236,16 @@
     <div class="tabs" id="tabs"></div>
 
     <div class="toolbar">
-      <div style="font-family:'Barlow Condensed',sans-serif;letter-spacing:1px;color:var(--text-faint);font-size:12px;text-transform:uppercase;" id="tabHint"></div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <div style="font-family:'Barlow Condensed',sans-serif;letter-spacing:1px;color:var(--text-faint);font-size:12px;text-transform:uppercase;" id="tabHint"></div>
+        <label id="hideOutOfStockWrap" style="display:flex;align-items:center;gap:6px;font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);cursor:pointer;">
+          <input type="checkbox" id="hideOutOfStockChk" onchange="toggleHideOutOfStock(this.checked)" style="accent-color:var(--amber);">
+          Hide Out-of-Stock
+        </label>
+      </div>
       <div style="display:flex;gap:8px;">
         <button class="btn small" id="orderToggleBtn" onclick="toggleOrders()">Orders: OFF</button>
+        <button class="btn ghost small" onclick="openPublicCategories()">Public Categories</button>
         <button class="btn ghost small" onclick="toggleLog()">Activity Log</button>
         <button class="btn ghost small" onclick="confirmReset()">Reset Data</button>
         <button class="btn primary" id="addBtn" onclick="handleAddButton()">+ Add Item</button>
@@ -301,7 +308,13 @@
       <span id="publicBannerText">Stock and prices below are public.</span>
     </div>
 
-    <div class="section-title">Available Inventory</div>
+    <div class="section-title">
+      Available Inventory
+      <label style="display:flex;align-items:center;gap:6px;font-family:'Barlow Condensed',sans-serif;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text-faint);cursor:pointer;font-weight:500;border-bottom:none;">
+        <input type="checkbox" id="hideOutOfStockPublicChk" onchange="toggleHideOutOfStockPublic(this.checked)" style="accent-color:var(--amber);">
+        Hide Out-of-Stock
+      </label>
+    </div>
     <table>
       <thead><tr><th>Item</th><th>Category</th><th class="num">Available</th><th class="num">Price</th></tr></thead>
       <tbody id="catalogBody"></tbody>
@@ -380,6 +393,8 @@
       <select id="addCategory">
         <option value="Recycling Materials">Recycling Materials</option>
         <option value="Drug Items">Drug Items</option>
+        <option value="Weapons">Weapons</option>
+        <option value="Crafting Supplies">Crafting Supplies</option>
         <option value="Misc Items">Misc Items</option>
       </select>
     </div>
@@ -493,16 +508,34 @@
   </div>
 </div>
 
+<!-- Public Categories Modal -->
+<div class="overlay" id="publicCatOverlay">
+  <div class="modal">
+    <h3>Public Categories</h3>
+    <div class="field-note" style="margin-bottom:12px;">
+      Only checked categories show on the public catalog and order form. Unchecked categories stay fully visible and manageable here in the owner view — customers just never see them.
+    </div>
+    <div id="publicCatList"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal('publicCatOverlay')">Cancel</button>
+      <button class="btn primary" onclick="submitPublicCategories()">Save</button>
+    </div>
+  </div>
+</div>
+
 <script>
-const CATEGORIES = ['Recycling Materials','Drug Items','Misc Items'];
+const CATEGORIES = ['Recycling Materials','Drug Items','Weapons','Crafting Supplies','Misc Items'];
 const TABS = ['All', ...CATEGORIES, 'Recipes'];
 const ORDER_STATUSES = ['Pending','Fulfilled','Cancelled'];
+const DEFAULT_PUBLIC_CATEGORIES = ['Recycling Materials','Drug Items'];
 
-let state = { items: [], sales: [], ordersEnabled: false, recipes: [], adjustments: [], craftLog: [] };   // owner-only, populated after unlock
+let state = { items: [], sales: [], ordersEnabled: false, recipes: [], adjustments: [], craftLog: [], publicCategories: DEFAULT_PUBLIC_CATEGORIES.slice() };   // owner-only, populated after unlock
 let catalog = [];                        // public, always populated
 let ordersEnabled = false;               // public flag — controls whether the order form shows at all
 let orders = [];                         // owner-only, populated after unlock
 let activeTab = 'All';
+let hideOutOfStock = false;
+let hideOutOfStockPublic = false;
 let logOpen = false;
 let pendingItemId = null;
 let unlocked = false;
@@ -610,7 +643,8 @@ async function loadOwnerData(){
     recipes: Array.isArray(ledger.recipes) ? ledger.recipes : [],
     adjustments: Array.isArray(ledger.adjustments) ? ledger.adjustments : [],
     craftLog: Array.isArray(ledger.craftLog) ? ledger.craftLog : [],
-  } : { items: [], sales: [], ordersEnabled: false, recipes: [], adjustments: [], craftLog: [] };
+    publicCategories: Array.isArray(ledger.publicCategories) ? ledger.publicCategories : DEFAULT_PUBLIC_CATEGORIES.slice(),
+  } : { items: [], sales: [], ordersEnabled: false, recipes: [], adjustments: [], craftLog: [], publicCategories: DEFAULT_PUBLIC_CATEGORIES.slice() };
   document.getElementById('firstRunBanner').style.display = state.items.length === 0 ? 'flex' : 'none';
 
   const ordersData = await api('orders', { auth: true });
@@ -625,6 +659,7 @@ async function loadStarterList(){
     recipes: state.recipes || [],
     adjustments: state.adjustments || [],
     craftLog: state.craftLog || [],
+    publicCategories: state.publicCategories || DEFAULT_PUBLIC_CATEGORIES.slice(),
   };
   await saveData();
   document.getElementById('firstRunBanner').style.display = 'none';
@@ -666,7 +701,7 @@ async function attemptUnlock(){
 function lockApp(){
   unlocked = false;
   ownerPin = null;
-  state = { items: [], sales: [], ordersEnabled: false, recipes: [], adjustments: [], craftLog: [] };
+  state = { items: [], sales: [], ordersEnabled: false, recipes: [], adjustments: [], craftLog: [], publicCategories: DEFAULT_PUBLIC_CATEGORIES.slice() };
   orders = [];
   updateLockUI();
 }
@@ -735,6 +770,18 @@ function renderTabs(){
     addBtn.textContent = '+ Add Item';
     addBtn.onclick = openAddItem;
   }
+
+  document.getElementById('hideOutOfStockWrap').style.display = activeTab === 'Recipes' ? 'none' : 'flex';
+}
+
+function toggleHideOutOfStock(checked){
+  hideOutOfStock = checked;
+  render();
+}
+
+function toggleHideOutOfStockPublic(checked){
+  hideOutOfStockPublic = checked;
+  renderCatalog();
 }
 
 function setTab(c){ activeTab = c; render(); }
@@ -770,13 +817,18 @@ function render(){
   document.getElementById('recipesArea').style.display = isRecipes ? 'block' : 'none';
 
   const body = document.getElementById('invBody');
-  const items = state.items.filter(i => activeTab==='All' || i.category===activeTab);
+  const items = state.items.filter(i =>
+    (activeTab==='All' || i.category===activeTab) && (!hideOutOfStock || i.qty > 0)
+  );
   document.getElementById('itemCount').textContent = state.items.length;
 
   if(!isRecipes){
     if(items.length === 0){
       body.innerHTML = '';
       document.getElementById('emptyState').style.display = 'block';
+      document.getElementById('emptyState').textContent = hideOutOfStock
+        ? 'Nothing in stock in this category right now.'
+        : 'No items in this category yet. Add one above.';
     } else {
       document.getElementById('emptyState').style.display = 'none';
       body.innerHTML = items.map(rowHtml).join('');
@@ -1232,20 +1284,44 @@ async function submitCraft(){
 
 function confirmReset(){
   showConfirm('Wipe everything — items, sales, adjustments, recipes, and crafting history — and reload the starter list? This cannot be undone.', async () => {
-    state = { items: seedData(), sales: [], ordersEnabled: false, recipes: [], adjustments: [], craftLog: [] };
+    state = { items: seedData(), sales: [], ordersEnabled: false, recipes: [], adjustments: [], craftLog: [], publicCategories: DEFAULT_PUBLIC_CATEGORIES.slice() };
     await saveData();
     document.getElementById('firstRunBanner').style.display = 'none';
     render();
   });
 }
 
+// ---------- Public category visibility ----------
+function openPublicCategories(){
+  const list = document.getElementById('publicCatList');
+  const current = state.publicCategories || DEFAULT_PUBLIC_CATEGORIES;
+  list.innerHTML = CATEGORIES.map(c => `
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;">
+      <input type="checkbox" value="${escapeHtml(c)}" ${current.includes(c)?'checked':''} style="accent-color:var(--amber);">
+      <span>${escapeHtml(c)}</span>
+    </label>`).join('');
+  openModal('publicCatOverlay');
+}
+
+async function submitPublicCategories(){
+  const checked = Array.from(document.querySelectorAll('#publicCatList input[type=checkbox]:checked')).map(el => el.value);
+  state.publicCategories = checked;
+  await saveData();
+  closeModal('publicCatOverlay');
+}
+
 // ---------- Public catalog + order form ----------
 function renderCatalog(){
   const body = document.getElementById('catalogBody');
-  const sorted = [...catalog].sort((a,b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  const sorted = [...catalog]
+    .filter(i => !hideOutOfStockPublic || i.qty > 0)
+    .sort((a,b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
   if(sorted.length === 0){
     body.innerHTML = '';
     document.getElementById('catalogEmpty').style.display = 'block';
+    document.getElementById('catalogEmpty').textContent = hideOutOfStockPublic
+      ? 'Everything is currently out of stock.'
+      : 'Nothing in stock right now — check back soon.';
     return;
   }
   document.getElementById('catalogEmpty').style.display = 'none';
