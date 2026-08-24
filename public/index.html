@@ -384,10 +384,10 @@
   </div>
 </div>
 
-<!-- Add Item Modal -->
+<!-- Add/Edit Item Modal -->
 <div class="overlay" id="addOverlay">
   <div class="modal">
-    <h3>Add Item</h3>
+    <h3 id="addItemModalTitle">Add Item</h3>
     <div class="field">
       <label>Category</label>
       <select id="addCategory">
@@ -402,11 +402,15 @@
     <div class="field"><label>MSRP ($)</label><input type="number" id="addMsrp" placeholder="0"></div>
     <div class="field"><label>Current Sale Price ($)</label><input type="number" id="addSale" placeholder="0"></div>
     <div class="field"><label>Cost per Unit ($)</label><input type="number" id="addCost" placeholder="0"></div>
-    <div class="field"><label>Starting Quantity</label><input type="number" id="addQty" placeholder="0"></div>
+    <div class="field">
+      <label id="addQtyLabel">Starting Quantity</label>
+      <input type="number" id="addQty" placeholder="0">
+      <div class="field-note" id="addQtyNote" style="display:none;">Quantity isn't changed here — use Restock or Adjust so it's tracked in the activity log.</div>
+    </div>
     <div class="modal-err" id="addErr">Fill in an item name.</div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal('addOverlay')">Cancel</button>
-      <button class="btn primary" onclick="submitAddItem()">Add to Manifest</button>
+      <button class="btn primary" id="addItemSubmitBtn" onclick="submitAddItem()">Add to Manifest</button>
     </div>
   </div>
 </div>
@@ -875,6 +879,7 @@ function rowHtml(i){
           <button class="btn small ghost" onclick="openRestock('${i.id}')">Restock</button>
           <button class="btn small primary" onclick="openSell('${i.id}')">Sell</button>
           <button class="btn small ghost" onclick="openAdjust('${i.id}')">Adjust</button>
+          <button class="btn small ghost" onclick="openEditItem('${i.id}')">Edit</button>
           <button class="btn small danger" onclick="deleteItem('${i.id}')">✕</button>
         </div>
       </td>
@@ -965,7 +970,15 @@ function deleteItem(id){
   });
 }
 
+let pendingEditItemId = null;
+
 function openAddItem(){
+  pendingEditItemId = null;
+  document.getElementById('addItemModalTitle').textContent = 'Add Item';
+  document.getElementById('addItemSubmitBtn').textContent = 'Add to Manifest';
+  document.getElementById('addQtyLabel').textContent = 'Starting Quantity';
+  document.getElementById('addQtyNote').style.display = 'none';
+  document.getElementById('addQty').disabled = false;
   document.getElementById('addName').value='';
   document.getElementById('addMsrp').value='';
   document.getElementById('addSale').value='';
@@ -975,19 +988,49 @@ function openAddItem(){
   openModal('addOverlay');
 }
 
+function openEditItem(id){
+  const item = state.items.find(i=>i.id===id);
+  if(!item) return;
+  pendingEditItemId = id;
+  document.getElementById('addItemModalTitle').textContent = 'Edit Item';
+  document.getElementById('addItemSubmitBtn').textContent = 'Save Changes';
+  document.getElementById('addQtyLabel').textContent = 'Quantity on Hand';
+  document.getElementById('addQtyNote').style.display = 'block';
+  document.getElementById('addQty').disabled = true;
+  document.getElementById('addName').value = item.name;
+  document.getElementById('addCategory').value = item.category;
+  document.getElementById('addMsrp').value = item.msrp;
+  document.getElementById('addSale').value = item.salePrice;
+  document.getElementById('addCost').value = item.cost;
+  document.getElementById('addQty').value = item.qty;
+  openModal('addOverlay');
+}
+
 async function submitAddItem(){
   const name = document.getElementById('addName').value.trim();
   if(!name){ document.getElementById('addErr').style.display='block'; return; }
-  const item = {
-    id: crypto.randomUUID(),
-    category: document.getElementById('addCategory').value,
-    name,
-    msrp: parseFloat(document.getElementById('addMsrp').value)||0,
-    salePrice: parseFloat(document.getElementById('addSale').value)||0,
-    cost: parseFloat(document.getElementById('addCost').value)||0,
-    qty: parseFloat(document.getElementById('addQty').value)||0,
-  };
-  state.items.push(item);
+
+  if(pendingEditItemId){
+    const item = state.items.find(i=>i.id===pendingEditItemId);
+    if(!item) return;
+    item.name = name;
+    item.category = document.getElementById('addCategory').value;
+    item.msrp = parseFloat(document.getElementById('addMsrp').value)||0;
+    item.salePrice = parseFloat(document.getElementById('addSale').value)||0;
+    item.cost = parseFloat(document.getElementById('addCost').value)||0;
+    // quantity intentionally untouched here — Restock/Adjust are the audited paths for that
+  } else {
+    state.items.push({
+      id: crypto.randomUUID(),
+      category: document.getElementById('addCategory').value,
+      name,
+      msrp: parseFloat(document.getElementById('addMsrp').value)||0,
+      salePrice: parseFloat(document.getElementById('addSale').value)||0,
+      cost: parseFloat(document.getElementById('addCost').value)||0,
+      qty: parseFloat(document.getElementById('addQty').value)||0,
+    });
+  }
+
   await saveData();
   closeModal('addOverlay');
   render();
