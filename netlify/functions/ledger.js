@@ -18,11 +18,20 @@ exports.handler = async function (event) {
     const store = getStore('cassanova');
 
     if (event.httpMethod === 'GET') {
-      const ledger = (await store.get('ledger', { type: 'json' })) || { items: [], sales: [] };
+      const ledger = (await store.get('ledger', { type: 'json' })) || {
+        items: [], sales: [], ordersEnabled: false, recipes: [], adjustments: [], craftLog: [],
+      };
       return {
         statusCode: 200,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ledger),
+        body: JSON.stringify({
+          items: ledger.items || [],
+          sales: ledger.sales || [],
+          ordersEnabled: Boolean(ledger.ordersEnabled),
+          recipes: Array.isArray(ledger.recipes) ? ledger.recipes : [],
+          adjustments: Array.isArray(ledger.adjustments) ? ledger.adjustments : [],
+          craftLog: Array.isArray(ledger.craftLog) ? ledger.craftLog : [],
+        }),
       };
     }
 
@@ -36,7 +45,14 @@ exports.handler = async function (event) {
       if (!Array.isArray(body.items) || !Array.isArray(body.sales)) {
         return { statusCode: 400, body: JSON.stringify({ error: '"items" and "sales" arrays are required' }) };
       }
-      await store.setJSON('ledger', { items: body.items, sales: body.sales });
+      await store.setJSON('ledger', {
+        items: body.items,
+        sales: body.sales,
+        ordersEnabled: Boolean(body.ordersEnabled),
+        recipes: Array.isArray(body.recipes) ? body.recipes : [],
+        adjustments: Array.isArray(body.adjustments) ? body.adjustments : [],
+        craftLog: Array.isArray(body.craftLog) ? body.craftLog : [],
+      });
       return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true }) };
     }
 
