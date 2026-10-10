@@ -196,6 +196,60 @@
   .log-row.loss td{color:var(--loss);}
   .footer-note{text-align:center;color:var(--text-faint);font-size:11px;letter-spacing:1px;margin-top:30px;}
   ::selection{background:var(--amber);color:var(--bg);}
+
+  /* ---------- Pricing + Still Log (owner tabs) ---------- */
+  :root{ --t1:#8a8576; --t2:#7f97b3; --t3:#4f9c82; --t4:#6f8ff0; --t5:#e7b84a; --t5-bg:rgba(231,184,74,0.10); }
+  .x-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);margin-bottom:18px;}
+  .x-grid .cell{background:var(--panel);padding:12px 14px;min-width:0;}
+  .x-grid .label{font-family:'Barlow Condensed',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--text-faint);margin-bottom:6px;}
+  .x-grid .value{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .x-grid .note{font-size:11px;color:var(--text-faint);margin-top:4px;}
+  .x-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin-bottom:26px;}
+  .x-card{background:var(--panel);border:1px solid var(--border);padding:16px;min-width:0;}
+  .x-card h4{font-family:'Barlow Condensed',sans-serif;font-size:18px;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 12px;color:var(--amber);}
+  .x-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px dashed var(--border-soft);font-size:13px;}
+  .x-row:last-child{border-bottom:none;}
+  .x-row .k{color:var(--text-dim);}
+  .x-row .v{font-variant-numeric:tabular-nums;text-align:right;}
+  .x-row.total{border-top:1px solid var(--border);border-bottom:none;margin-top:4px;padding-top:10px;font-weight:700;}
+  .src{font-family:'Barlow Condensed',sans-serif;font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:2px 6px;border:1px solid var(--border);color:var(--text-faint);margin-left:6px;white-space:nowrap;}
+  .src.inv{border-color:var(--profit);color:var(--profit);}
+  .set-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px 14px;}
+  .set-grid .field{margin-bottom:0;}
+  .slider-row{display:grid;grid-template-columns:150px 1fr 64px;align-items:center;gap:10px;margin:8px 0;font-size:13px;}
+  .slider-row label{font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);}
+  .slider-row input{accent-color:var(--amber);width:100%;}
+  .slider-row span{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;}
+  .tier-tag{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+  .tier-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none;}
+  .tier-1{background:var(--t1);} .tier-2{background:var(--t2);} .tier-3{background:var(--t3);} .tier-4{background:var(--t4);} .tier-5{background:var(--t5);}
+  .stations{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:26px;}
+  .station{background:var(--panel);border:1px solid var(--border);padding:14px;display:flex;flex-direction:column;gap:9px;min-width:0;}
+  .station.brewing{border-color:var(--profit);box-shadow:inset 0 2px 0 var(--profit);}
+  .station-top{display:flex;justify-content:space-between;align-items:center;}
+  .station-name{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:18px;letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap;}
+  .pill{font-family:'Barlow Condensed',sans-serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;padding:2px 8px;border:1px solid var(--border);color:var(--text-faint);}
+  .pill.on{border-color:var(--profit);color:var(--profit);}
+  .ing-row{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;}
+  .ing-row label{color:var(--text-dim);}
+  .stepper{display:flex;border:1px solid var(--border);}
+  .stepper button{width:26px;height:26px;border:none;background:transparent;color:var(--amber);cursor:pointer;font-size:15px;font-family:'Space Mono',monospace;}
+  .stepper button:hover{background:rgba(217,164,65,0.1);}
+  .stepper input{width:40px;height:26px;border:none;border-left:1px solid var(--border);border-right:1px solid var(--border);background:var(--bg);color:var(--text);text-align:center;font-family:'Space Mono',monospace;font-size:13px;-moz-appearance:textfield;}
+  .stepper input::-webkit-outer-spin-button,.stepper input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+  .station.brewing .stepper button{visibility:hidden;}
+  .tried{font-size:11px;padding:6px 8px;border:1px dashed var(--amber-dim);color:var(--text-dim);}
+  .res-grid{display:grid;grid-template-columns:1fr;gap:5px;}
+  .res-btn{display:flex;align-items:center;gap:6px;padding:7px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-size:13px;letter-spacing:.5px;text-transform:uppercase;text-align:left;}
+  .res-btn:hover{border-color:var(--amber);}
+  .res-btn.t5{border-color:var(--t5);background:var(--t5-bg);}
+  tr.legend-row td{background:var(--t5-bg) !important;}
+  .tbl-scroll{overflow-x:auto;}
+  .still-status{font-size:11px;color:var(--text-faint);letter-spacing:1px;}
+  .still-status.err{color:var(--loss);}
+  @media(max-width:640px){
+    .slider-row{grid-template-columns:110px 1fr 56px;}
+  }
   @media(max-width:640px){
     .ticker{grid-template-columns:repeat(2,1fr);}
     table{font-size:12px;}
@@ -274,6 +328,47 @@
         <tbody id="recipesBody"></tbody>
       </table>
       <div id="recipesEmpty" class="empty" style="display:none;">No recipes yet. Add one above.</div>
+    </div>
+
+    <!-- ===== Pricing tab ===== -->
+    <div id="pricingArea" style="display:none;">
+      <div class="section-title">Ingredient costs <span class="still-status" id="pricingStatus"></span></div>
+      <div class="field-note" style="margin-bottom:10px;">Costs tagged <span class="src inv">inventory</span> come from the Cost / Unit you set on that item. Change it there and every number below updates. Untagged costs use the value in this box.</div>
+      <div class="x-card" style="margin-bottom:18px;"><div class="set-grid" id="pricingInputs"></div></div>
+
+      <div class="x-cols">
+        <div class="x-card" id="crackCard"></div>
+        <div class="x-card" id="cokeCard"></div>
+      </div>
+
+      <div class="section-title">Storm planner</div>
+      <div class="x-card" style="margin-bottom:26px;">
+        <div class="field-note" style="margin-bottom:8px;">Sell coke first to level up, then switch to crack. Prices are assumed to climb steadily, so each phase averages the midpoint of its range.</div>
+        <div id="stormSliders"></div>
+        <div class="x-grid" id="stormOut" style="margin-top:14px;"></div>
+        <div class="field-note" id="stormStock"></div>
+      </div>
+    </div>
+
+    <!-- ===== Still Log tab ===== -->
+    <div id="stillArea" style="display:none;">
+      <div class="x-grid" id="stillStats"></div>
+      <div class="section-title">Stations <span class="still-status" id="stillStatus"></span></div>
+      <div class="stations" id="stations"></div>
+
+      <div class="section-title">Recipe board
+        <span style="display:flex;gap:12px;flex-wrap:wrap;font-weight:500;font-size:11px;" id="tierLegend"></span>
+      </div>
+      <div class="tbl-scroll"><table>
+        <thead><tr><th>Rank</th><th class="num">Apple</th><th class="num">Corn</th><th class="num">Bread</th><th class="num">Barley</th><th class="num">Water</th><th class="num">Runs</th><th>Best Result</th><th>Results Seen</th></tr></thead>
+        <tbody id="boardBody"></tbody>
+      </table></div>
+
+      <div class="section-title">Run log</div>
+      <div class="tbl-scroll"><table>
+        <thead><tr><th>When</th><th>Station</th><th class="num">Apple</th><th class="num">Corn</th><th class="num">Bread</th><th class="num">Barley</th><th class="num">Water</th><th>Result</th><th></th></tr></thead>
+        <tbody id="runBody"></tbody>
+      </table></div>
     </div>
 
     <div id="logSection" style="display:none;">
@@ -529,7 +624,8 @@
 
 <script>
 const CATEGORIES = ['Recycling Materials','Drug Items','Weapons','Crafting Supplies','Misc Items'];
-const TABS = ['All', ...CATEGORIES, 'Recipes'];
+const TABS = ['All', ...CATEGORIES, 'Recipes', 'Pricing', 'Still Log'];
+const TOOL_TABS = ['Pricing', 'Still Log']; // tabs with their own page instead of the item table
 const ORDER_STATUSES = ['Pending','Fulfilled','Cancelled'];
 const DEFAULT_PUBLIC_CATEGORIES = ['Recycling Materials','Drug Items'];
 
@@ -653,6 +749,8 @@ async function loadOwnerData(){
 
   const ordersData = await api('orders', { auth: true });
   orders = Array.isArray(ordersData) ? ordersData : [];
+
+  await loadStills();
 }
 
 async function loadStarterList(){
@@ -707,6 +805,7 @@ function lockApp(){
   ownerPin = null;
   state = { items: [], sales: [], ordersEnabled: false, recipes: [], adjustments: [], craftLog: [], publicCategories: DEFAULT_PUBLIC_CATEGORIES.slice() };
   orders = [];
+  stills = emptyStills();
   updateLockUI();
 }
 
@@ -764,6 +863,8 @@ function renderTabs(){
   ).join('');
   document.getElementById('tabHint').textContent = activeTab === 'All' ? 'Showing all categories'
     : activeTab === 'Recipes' ? 'Define crafting recipes and craft batches'
+    : activeTab === 'Pricing' ? 'Cost per bag, pricing, and storm planning'
+    : activeTab === 'Still Log' ? 'Moonshine recipe testing'
     : 'Category: ' + activeTab;
 
   const addBtn = document.getElementById('addBtn');
@@ -775,7 +876,9 @@ function renderTabs(){
     addBtn.onclick = openAddItem;
   }
 
-  document.getElementById('hideOutOfStockWrap').style.display = activeTab === 'Recipes' ? 'none' : 'flex';
+  const isTool = TOOL_TABS.includes(activeTab);
+  addBtn.style.display = isTool ? 'none' : '';
+  document.getElementById('hideOutOfStockWrap').style.display = (activeTab === 'Recipes' || isTool) ? 'none' : 'flex';
 }
 
 function toggleHideOutOfStock(checked){
@@ -817,8 +920,13 @@ function render(){
   renderTabs();
 
   const isRecipes = activeTab === 'Recipes';
-  document.getElementById('itemsArea').style.display = isRecipes ? 'none' : 'block';
+  const isTool = TOOL_TABS.includes(activeTab);
+  document.getElementById('itemsArea').style.display = (isRecipes || isTool) ? 'none' : 'block';
   document.getElementById('recipesArea').style.display = isRecipes ? 'block' : 'none';
+  document.getElementById('pricingArea').style.display = activeTab === 'Pricing' ? 'block' : 'none';
+  document.getElementById('stillArea').style.display = activeTab === 'Still Log' ? 'block' : 'none';
+  if(activeTab === 'Pricing') renderPricing();
+  if(activeTab === 'Still Log') renderStill();
 
   const body = document.getElementById('invBody');
   const items = state.items.filter(i =>
@@ -1495,6 +1603,299 @@ function deleteOrder(id){
     await api('orders', { method: 'DELETE', auth: true, body: { id } });
     orders = orders.filter(o=>o.id!==id);
     renderOrders();
+  });
+}
+
+// =====================================================================
+// ---------- Pricing + Still Log (owner-only, stored under "stills") ----------
+// =====================================================================
+const STATION_IDS = ['s1','s2','s3','s4','s5'];
+const MOON_INGS = [['apple','Moldy Apple'],['corn','Moldy Corn'],['bread','Moldy Bread'],['barley','Moldy Barley'],['water','Water']];
+const TIER_NAMES = {1:'Below Average',2:'Average',3:'Above Average',4:'Excellent',5:'Legendary'};
+
+// Costs that can come from an inventory item's Cost / Unit, matched by item name.
+const COST_FIELDS = [
+  { key:'runnerBag',  label:'Runner bag (300 eth / 150 ace)', def:45000, match:/ethanol.*acetone.*bundle|bundle.*ethanol/i },
+  { key:'cokeBag',    label:'Coke bag (30 gas / ace / leaves)', def:9000, match:/30\s*\/\s*30\s*\/\s*30/ },
+  { key:'slammer',    label:'Slammer (each)',      def:2, match:/slammer/i },
+  { key:'bakingSoda', label:'Baking soda (each)',  def:2, match:/baking\s*soda/i },
+  { key:'emptyBag',   label:'Empty bag (each)',    def:2, match:/empty.*bag/i },
+];
+// Yields and sale prices, set on this page.
+const PRICE_FIELDS = [
+  { key:'crackBagsPerBatch', label:'Crack bags per batch (150 rocks)', def:2040 },
+  { key:'cokeBaggiesPerRun', label:'Coke baggies per run (5 loose)', def:45 },
+  { key:'crackDealer',  label:'Crack dealer price', def:90 },
+  { key:'cokeDealer',   label:'Coke dealer price',  def:65 },
+  { key:'crackStreetLo',label:'Crack street, start', def:80 },
+  { key:'crackStreetHi',label:'Crack street, peak',  def:250 },
+  { key:'cokeStreetLo', label:'Coke street, start',  def:70 },
+  { key:'cokeStreetHi', label:'Coke street, peak',   def:150 },
+];
+
+function emptyStills(){
+  const stations = {};
+  STATION_IDS.forEach(id => stations[id] = { formula:{apple:0,corn:0,bread:0,barley:0,water:0}, brewing:false, startedAt:null });
+  return { stations, runs:[], pricing:{} };
+}
+let stills = emptyStills();
+let stillsLoaded = false;
+let storm = null; // storm planner slider state, per session
+
+async function loadStills(){
+  try{
+    const d = await api('stills', { auth:true });
+    stills = Object.assign(emptyStills(), d || {});
+    STATION_IDS.forEach(id => { if(!stills.stations[id]) stills.stations[id] = emptyStills().stations[id]; });
+    stillsLoaded = true;
+    setStillStatus('');
+  } catch(e){
+    stillsLoaded = false;
+    console.error('Failed to load still log', e);
+    setStillStatus('Could not load the still log: ' + e.message, true);
+  }
+}
+async function stillsPost(body){ return api('stills', { method:'POST', auth:true, body }); }
+function setStillStatus(t, err){
+  ['stillStatus','pricingStatus'].forEach(id => { const el=document.getElementById(id); if(el){ el.textContent=t; el.classList.toggle('err', !!err); } });
+}
+
+// ---------- Pricing ----------
+function invItemFor(f){
+  return f.match ? state.items.find(i => f.match.test(i.name) && Number(i.cost) > 0) : null;
+}
+function costOf(key){
+  const f = COST_FIELDS.find(x=>x.key===key);
+  const inv = invItemFor(f);
+  if(inv) return Number(inv.cost);
+  const v = Number(stills.pricing[key]);
+  return isFinite(v) && stills.pricing[key] !== '' && stills.pricing[key] != null ? v : f.def;
+}
+function priceOf(key){
+  const f = PRICE_FIELDS.find(x=>x.key===key);
+  const v = Number(stills.pricing[key]);
+  return stills.pricing[key] != null && stills.pricing[key] !== '' && isFinite(v) && v > 0 ? v : f.def;
+}
+function calc(){
+  const c = k => costOf(k), p = k => priceOf(k);
+  const ethAce = c('runnerBag') / 450;                     // each eth / ace
+  const setCost = c('cokeBag') / 30;                       // one gas + ace + leaves
+  const looseCoke = (setCost + 2*c('bakingSoda') + 2*c('slammer')) / 5;
+  const rock = 3*ethAce + looseCoke + 2*c('slammer') + c('emptyBag');
+  const crackBatch = 150 * rock, crackBags = p('crackBagsPerBatch');
+  const cokeRun = setCost + 2*c('bakingSoda') + 2*c('slammer') + 5*c('emptyBag');
+  const cokeBatch = 30 * cokeRun, cokeBags = 30 * p('cokeBaggiesPerRun');
+  return { ethAce, setCost, looseCoke, rock, crackBatch, crackBags, crackPer: crackBatch/crackBags, cokeRun, cokeBatch, cokeBags, cokePer: cokeBatch/cokeBags };
+}
+const money2 = n => (n<0?'-':'') + '$' + Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const pct = n => Math.round(n*100) + '%';
+
+function renderPricing(){
+  const box = document.getElementById('pricingInputs');
+  const focused = document.activeElement && document.activeElement.id;
+  box.innerHTML = COST_FIELDS.map(f => {
+    const inv = invItemFor(f);
+    return `<div class="field"><label for="pr-${f.key}">${f.label}${inv?'<span class="src inv">inventory</span>':''}</label>
+      <input type="number" min="0" step="any" id="pr-${f.key}" value="${costOf(f.key)}" ${inv?`disabled title="Set by ${escapeHtml(inv.name)} in inventory"`:`onchange="setPricing('${f.key}',this.value)"`}></div>`;
+  }).join('') + PRICE_FIELDS.map(f =>
+    `<div class="field"><label for="pr-${f.key}">${f.label}</label><input type="number" min="0" step="any" id="pr-${f.key}" value="${priceOf(f.key)}" onchange="setPricing('${f.key}',this.value)"></div>`
+  ).join('');
+  if(focused && document.getElementById(focused)) document.getElementById(focused).focus();
+
+  const k = calc();
+  const row = (a,b,cls='') => `<div class="x-row ${cls}"><span class="k">${a}</span><span class="v">${b}</span></div>`;
+  const priceRows = (per, perBatchBags, list) => list.map(([name, price]) => {
+    const profit = price - per;
+    return row(`${name} · ${money(price)}`, `<span style="color:${profit>=0?'var(--profit)':'var(--loss)'}">${money2(profit)}/bag · ${pct(profit/price)}</span><br><span style="color:var(--text-faint);font-size:11px;">${money(profit*perBatchBags)} per batch</span>`);
+  }).join('');
+
+  document.getElementById('crackCard').innerHTML = `<h4>3 Star Crack</h4>
+    <div class="x-grid"><div class="cell"><div class="label">Batch cost</div><div class="value">${money(k.crackBatch)}</div><div class="note">150 rocks</div></div>
+      <div class="cell"><div class="label">Cost per bag</div><div class="value">${money2(k.crackPer)}</div><div class="note">${k.crackBags.toLocaleString()} bags</div></div></div>
+    ${row('Ethanol x2 + Acetone x1', money2(3*k.ethAce)+' / rock')}
+    ${row('Loose coke x1', money2(k.looseCoke)+' / rock')}
+    ${row('Slammer x2 + Empty bag x1', money2(2*costOf('slammer')+costOf('emptyBag'))+' / rock')}
+    ${row('Cost per rock', money2(k.rock), 'total')}
+    <div class="section-title" style="margin:14px 0 4px;font-size:13px;">Profit per bag</div>
+    ${priceRows(k.crackPer, k.crackBags, [['Dealer', priceOf('crackDealer')], ['Street start', priceOf('crackStreetLo')], ['Street peak', priceOf('crackStreetHi')]])}`;
+
+  document.getElementById('cokeCard').innerHTML = `<h4>3 Star Coke</h4>
+    <div class="x-grid"><div class="cell"><div class="label">Batch cost</div><div class="value">${money(k.cokeBatch)}</div><div class="note">1 coke bag, 30 runs</div></div>
+      <div class="cell"><div class="label">Cost per baggie</div><div class="value">${money2(k.cokePer)}</div><div class="note">${k.cokeBags.toLocaleString()} baggies</div></div></div>
+    ${row('Gas + Acetone + Leaves', money2(k.setCost)+' / run')}
+    ${row('Baking soda x2 + Slammer x2', money2(2*costOf('bakingSoda')+2*costOf('slammer'))+' / run')}
+    ${row('Empty bags x5', money2(5*costOf('emptyBag'))+' / run')}
+    ${row('Cost per run', money2(k.cokeRun), 'total')}
+    <div class="section-title" style="margin:14px 0 4px;font-size:13px;">Profit per baggie</div>
+    ${priceRows(k.cokePer, k.cokeBags, [['Dealer', priceOf('cokeDealer')], ['Street start', priceOf('cokeStreetLo')], ['Street peak', priceOf('cokeStreetHi')]])}`;
+
+  renderStorm();
+}
+
+let pricingSaveTimer = null;
+function setPricing(key, val){
+  stills.pricing = Object.assign({}, stills.pricing, { [key]: val === '' ? null : Number(val) });
+  storm = null; // re-seed the planner from the new prices
+  renderPricing();
+  clearTimeout(pricingSaveTimer);
+  pricingSaveTimer = setTimeout(async () => {
+    try{ await stillsPost({ op:'pricing', pricing: stills.pricing }); setStillStatus('Saved'); }
+    catch(e){ setStillStatus('Could not save pricing: ' + e.message, true); }
+  }, 500);
+}
+
+function renderStorm(){
+  const k = calc();
+  if(!storm) storm = {
+    cokeQty: 2000, crackQty: 2000,
+    cokeStart: priceOf('cokeStreetLo'), cokeEnd: priceOf('cokeStreetHi'),
+    crackStart: 200, crackEnd: priceOf('crackStreetHi'),
+  };
+  const sliders = [
+    ['cokeQty','Coke bags sold', 0, 4000, 50, v=>v.toLocaleString()],
+    ['cokeStart','Coke start price', 20, 300, 1, v=>'$'+v],
+    ['cokeEnd','Coke end price', 20, 300, 1, v=>'$'+v],
+    ['crackQty','Crack bags sold', 0, 4000, 50, v=>v.toLocaleString()],
+    ['crackStart','Crack start price', 20, 400, 1, v=>'$'+v],
+    ['crackEnd','Crack end price', 20, 400, 1, v=>'$'+v],
+  ];
+  const wrap = document.getElementById('stormSliders');
+  if(!wrap.dataset.built){
+    wrap.innerHTML = sliders.map(([key,label,min,max,step]) =>
+      `<div class="slider-row"><label for="st-${key}">${label}</label><input type="range" id="st-${key}" min="${min}" max="${max}" step="${step}" oninput="setStorm('${key}',this.value)"><span id="st-${key}-v"></span></div>`).join('');
+    wrap.dataset.built = '1';
+  }
+  sliders.forEach(([key,,,,,fmt]) => {
+    document.getElementById('st-'+key).value = storm[key];
+    document.getElementById('st-'+key+'-v').textContent = fmt(storm[key]);
+  });
+
+  const cokeRev = storm.cokeQty * (storm.cokeStart + storm.cokeEnd) / 2;
+  const crackRev = storm.crackQty * (storm.crackStart + storm.crackEnd) / 2;
+  const cost = storm.cokeQty * k.cokePer + storm.crackQty * k.crackPer;
+  const profit = cokeRev + crackRev - cost;
+  const dealerProfit = storm.cokeQty * priceOf('cokeDealer') + storm.crackQty * priceOf('crackDealer') - cost;
+  const cell = (l,v,n,cls='v-neutral') => `<div class="cell"><div class="label">${l}</div><div class="value ${cls}">${v}</div><div class="note">${n}</div></div>`;
+  document.getElementById('stormOut').innerHTML =
+    cell('Coke revenue', money(cokeRev), 'avg ' + money((storm.cokeStart+storm.cokeEnd)/2) + ' / bag') +
+    cell('Crack revenue', money(crackRev), 'avg ' + money((storm.crackStart+storm.crackEnd)/2) + ' / bag') +
+    cell('Product cost', money(Math.round(cost)), (storm.cokeQty+storm.crackQty).toLocaleString() + ' bags') +
+    cell('Storm profit', money(Math.round(profit)), dealerProfit > 0 ? (profit/dealerProfit).toFixed(1) + 'x selling to dealers' : '', profit>=0?'v-pos':'v-neg');
+
+  const crackBatches = Math.ceil(storm.crackQty / k.crackBags);
+  const cokeBatches = Math.ceil(storm.cokeQty / k.cokeBags);
+  const cash = crackBatches * k.crackBatch + cokeBatches * k.cokeBatch;
+  const leftCrack = crackBatches * k.crackBags - storm.crackQty;
+  const leftCoke = cokeBatches * k.cokeBags - storm.cokeQty;
+  document.getElementById('stormStock').innerHTML =
+    `To stock this storm: <strong style="color:var(--text)">${crackBatches} runner bag${crackBatches===1?'':'s'}</strong> and <strong style="color:var(--text)">${crackBatches + cokeBatches} coke bag${crackBatches+cokeBatches===1?'':'s'}</strong> (${crackBatches} for crack, ${cokeBatches} to sell as coke), about <strong style="color:var(--text)">${money(Math.round(cash))}</strong> out of pocket. ` +
+    `Leaves roughly ${leftCrack.toLocaleString()} crack and ${leftCoke.toLocaleString()} coke bags for the next storm. Same bags sold to dealers: ${money(Math.round(dealerProfit))} profit.`;
+}
+function setStorm(key, val){ storm[key] = Number(val); renderStorm(); }
+
+// ---------- Still Log ----------
+const moonKey = f => MOON_INGS.map(([k]) => Number(f[k])||0).join('-');
+const tierTag = t => `<span class="tier-tag"><span class="tier-dot tier-${t}"></span>${TIER_NAMES[t]}</span>`;
+
+function moonRecipes(){
+  const m = {};
+  stills.runs.forEach(r => {
+    const k = moonKey(r.formula);
+    if(!m[k]) m[k] = { formula:r.formula, runs:0, best:0, seen:{} };
+    m[k].runs++; m[k].best = Math.max(m[k].best, r.tier); m[k].seen[r.tier] = (m[k].seen[r.tier]||0) + 1;
+  });
+  return Object.values(m).sort((a,b) => b.best-a.best || b.runs-a.runs);
+}
+
+function renderStill(){
+  if(!stillsLoaded){
+    document.getElementById('stations').innerHTML = `<div class="empty" style="grid-column:1/-1;">Still log didn't load. Lock and unlock to try again.</div>`;
+    return;
+  }
+  const recs = moonRecipes();
+  const recMap = {}; recs.forEach(r => recMap[moonKey(r.formula)] = r);
+  const brewing = STATION_IDS.filter(id => stills.stations[id].brewing).length;
+
+  document.getElementById('stillStats').innerHTML =
+    `<div class="cell"><div class="label">Runs logged</div><div class="value">${stills.runs.length}</div></div>
+     <div class="cell"><div class="label">Formulas tried</div><div class="value">${recs.length}</div></div>
+     <div class="cell"><div class="label">Brewing now</div><div class="value">${brewing} / 5</div></div>
+     <div class="cell"><div class="label">Best so far</div><div class="value">${recs.length ? tierTag(recs[0].best) : '–'}</div></div>`;
+
+  document.getElementById('stations').innerHTML = STATION_IDS.map((id, i) => {
+    const s = stills.stations[id];
+    const total = MOON_INGS.reduce((n,[k]) => n + (Number(s.formula[k])||0), 0);
+    const prev = recMap[moonKey(s.formula)];
+    const rows = MOON_INGS.map(([k,name]) => `<div class="ing-row"><label for="${id}-${k}">${name}</label>
+      <div class="stepper"><button type="button" onclick="bumpIng('${id}','${k}',-1)" aria-label="Less ${name}">−</button><input type="number" min="0" max="999" id="${id}-${k}" value="${Number(s.formula[k])||0}" ${s.brewing?'readonly':''} onchange="setIng('${id}','${k}',this.value)"><button type="button" onclick="bumpIng('${id}','${k}',1)" aria-label="More ${name}">+</button></div></div>`).join('');
+    const tried = prev && total ? `<div class="tried">Tried ${prev.runs}× before · best ${TIER_NAMES[prev.best]}</div>` : '';
+    const actions = s.brewing
+      ? `<div class="ing-row"><label>What came out?</label></div>
+         <div class="res-grid">${[1,2,3,4,5].map(t => `<button type="button" class="res-btn t${t}" onclick="logRun('${id}',${t})"><span class="tier-dot tier-${t}"></span>${TIER_NAMES[t]}</button>`).join('')}</div>
+         <button type="button" class="btn ghost small" onclick="cancelBatch('${id}')">Cancel batch</button>`
+      : `<button type="button" class="btn primary" onclick="startBatch('${id}')" ${total?'':'disabled'}>Start batch</button>`;
+    return `<div class="station ${s.brewing?'brewing':''}"><div class="station-top"><span class="station-name">Station ${i+1}</span><span class="pill ${s.brewing?'on':''}">${s.brewing?'Brewing':'Idle'}</span></div>
+      ${rows}<div class="ing-row"><label>Total units</label><span>${total}</span></div>${tried}${actions}</div>`;
+  }).join('');
+
+  document.getElementById('tierLegend').innerHTML = [1,2,3,4,5].map(tierTag).join('');
+
+  document.getElementById('boardBody').innerHTML = recs.length
+    ? recs.map((r,i) => `<tr class="${r.best===5?'legend-row':''}"><td>${i+1}</td>${MOON_INGS.map(([k]) => `<td class="num">${Number(r.formula[k])||0}</td>`).join('')}<td class="num">${r.runs}</td><td>${tierTag(r.best)}</td>
+        <td>${Object.keys(r.seen).sort((a,b)=>b-a).map(t => `<span class="tier-tag" title="${TIER_NAMES[t]}"><span class="tier-dot tier-${t}"></span>${r.seen[t]}</span>`).join(' &nbsp;')}</td></tr>`).join('')
+    : `<tr><td colspan="9" style="color:var(--text-faint);text-align:center;padding:16px;">No runs yet. Start a batch, then tag the result. Formulas rank here, best first.</td></tr>`;
+
+  const runs = stills.runs.slice().sort((a,b) => b.at - a.at);
+  document.getElementById('runBody').innerHTML = runs.length
+    ? runs.map(r => `<tr><td>${new Date(r.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</td><td>Station ${escapeHtml(r.station)}</td>
+        ${MOON_INGS.map(([k]) => `<td class="num">${Number(r.formula[k])||0}</td>`).join('')}<td>${tierTag(r.tier)}</td>
+        <td><button class="btn small danger" onclick="deleteRun('${escapeHtml(r.id)}')">✕</button></td></tr>`).join('')
+    : `<tr><td colspan="9" style="color:var(--text-faint);text-align:center;padding:16px;">Finished batches show up here with their formula and result.</td></tr>`;
+}
+
+const stationTimers = {};
+function saveStation(id, now){
+  clearTimeout(stationTimers[id]);
+  const send = async () => {
+    try{ await stillsPost({ op:'station', id, station: stills.stations[id] }); setStillStatus('Saved'); }
+    catch(e){ setStillStatus('Could not save station: ' + e.message, true); }
+  };
+  if(now) send(); else stationTimers[id] = setTimeout(send, 600);
+}
+function setIng(id, k, v){
+  const s = stills.stations[id]; if(s.brewing) return;
+  s.formula[k] = Math.max(0, Math.min(999, Math.round(Number(v)||0)));
+  renderStill(); saveStation(id);
+}
+function bumpIng(id, k, d){ setIng(id, k, (Number(stills.stations[id].formula[k])||0) + d); }
+function startBatch(id){
+  const s = stills.stations[id]; s.brewing = true; s.startedAt = Date.now();
+  renderStill(); saveStation(id, true);
+}
+function cancelBatch(id){
+  const s = stills.stations[id]; s.brewing = false; s.startedAt = null;
+  renderStill(); saveStation(id, true);
+}
+async function logRun(id, tier){
+  const s = stills.stations[id];
+  const run = { id: crypto.randomUUID(), station: id.slice(1), formula: Object.assign({}, s.formula), tier, at: Date.now() };
+  stills.runs.push(run);
+  s.brewing = false; s.startedAt = null;
+  renderStill();
+  try{
+    await stillsPost({ op:'run', run });
+    await stillsPost({ op:'station', id, station: s });
+    setStillStatus('Saved');
+  } catch(e){
+    setStillStatus('Could not save that run: ' + e.message, true);
+  }
+}
+function deleteRun(runId){
+  showConfirm('Delete this run from the still log?', async () => {
+    stills.runs = stills.runs.filter(r => r.id !== runId);
+    renderStill();
+    try{ await stillsPost({ op:'deleteRun', id: runId }); setStillStatus('Saved'); }
+    catch(e){ setStillStatus('Could not delete that run: ' + e.message, true); }
   });
 }
 
