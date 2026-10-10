@@ -1697,7 +1697,7 @@ let storm = null; // storm planner slider state, per session
 async function loadStills(){
   try{
     const left = await flushOutbox();                  // upload anything saved offline first
-    const d = await api('stills', { auth:true });
+    const d = mergeRecent(await api('stills', { auth:true }) || {});
     stills = Object.assign(emptyStills(), d || {});
     STATION_IDS.forEach(id => {
       if(!stills.stations[id]) stills.stations[id] = emptyStills().stations[id];
@@ -1733,8 +1733,55 @@ async function flushOutbox(){
   })();
   return flushing;
 }
+// Recent saves, kept on this device for a few minutes. Netlify can take up to
+// ~60 s to show a new save everywhere, so a reload right after a save merges
+// these back in instead of briefly showing older data.
+const RECENT_KEY = 'cassanova-stills-recent', RECENT_MS = 3 * 60 * 1000;
+function readRecent(){
+  let r; try{ r = JSON.parse(localStorage.getItem(RECENT_KEY) || '{}'); } catch(e){ r = {}; }
+  r = Object.assign({ runs:{}, pending:{}, stations:{}, gone:{}, pricing:null }, r);
+  const cut = Date.now() - RECENT_MS;
+  ['runs','pending','stations','gone'].forEach(k => Object.keys(r[k]).forEach(id => { const e = r[k][id]; if((e.t || e) < cut) delete r[k][id]; }));
+  if(r.pricing && r.pricing.t < cut) r.pricing = null;
+  return r;
+}
+function writeRecent(r){ try{ localStorage.setItem(RECENT_KEY, JSON.stringify(r)); } catch(e){} }
+function remember(body){
+  const r = readRecent(), t = Date.now(), copy = v => JSON.parse(JSON.stringify(v));
+  switch(body.op){
+    case 'station': r.stations[body.id] = { v: copy(body.station), t }; break;
+    case 'pricing': r.pricing = { v: copy(body.pricing), t }; break;
+    case 'run': r.runs[body.run.id] = { v: copy(body.run), t }; delete r.gone['run:' + body.run.id]; break;
+    case 'deleteRun': r.gone['run:' + body.id] = t; delete r.runs[body.id]; break;
+    case 'collect':
+      r.pending[body.pending.id] = { v: copy(body.pending), t };
+      if(body.station) r.stations[body.id] = { v: Object.assign(copy(body.station), { brewing:false, startedAt:null }), t };
+      break;
+    case 'rate':
+      if(body.pending) r.runs[body.id] = { v: Object.assign(copy(body.pending), { tier: body.tier }), t };
+      r.gone['pending:' + body.id] = t; delete r.pending[body.id]; break;
+    case 'discardPending': r.gone['pending:' + body.id] = t; delete r.pending[body.id]; break;
+  }
+  writeRecent(r);
+}
+function mergeRecent(d){
+  const r = readRecent();
+  const byId = list => Object.fromEntries((list || []).map(x => [x.id, x]));
+  const runs = byId(d.runs), pending = byId(d.pending);
+  Object.values(r.runs).forEach(e => { runs[e.v.id] = e.v; });
+  Object.values(r.pending).forEach(e => { pending[e.v.id] = e.v; });
+  Object.keys(r.gone).forEach(k => { const [type, id] = k.split(':'); if(type === 'run') delete runs[id]; else delete pending[id]; });
+  Object.keys(runs).forEach(id => delete pending[id]);      // a rated batch is no longer waiting
+  d.runs = Object.values(runs); d.pending = Object.values(pending);
+  d.stations = Object.assign({}, d.stations);
+  Object.keys(r.stations).forEach(id => { d.stations[id] = r.stations[id].v; });
+  if(r.pricing) d.pricing = r.pricing.v;
+  return d;
+}
+
 // Save one change. Returns true when the server has it.
 async function saveOp(body){
+  remember(body);
   if(readOutbox().length) await flushOutbox();         // keep changes in order
   if(readOutbox().length){ writeOutbox(readOutbox().concat([body])); showUnsaved(); return false; }
   try{ await stillsPost(body); setStillStatus('Saved'); return true; }
@@ -2027,14 +2074,14 @@ async function collectBatch(id){
   stills.pending.push(item);
   s.brewing = false; s.startedAt = null;
   renderStill();
-  await saveOp({ op:'collect', id, pending: item });
+  await saveOp({ op:'collect', id, pending: item, station: JSON.parse(JSON.stringify(s)) });
 }
 async function ratePending(pid, tier){
   const p = stills.pending.find(x => x.id === pid); if(!p) return;
   stills.pending = stills.pending.filter(x => x.id !== pid);
   stills.runs.push(Object.assign({}, p, { tier }));
   renderStill();
-  await saveOp({ op:'rate', id: pid, tier });
+  await saveOp({ op:'rate', id: pid, tier, pending: JSON.parse(JSON.stringify(p)) });
 }
 function discardPending(pid){
   showConfirm('Remove this batch without recording a result?', async () => {
