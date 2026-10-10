@@ -386,6 +386,15 @@
     <!-- ===== Still Log tab ===== -->
     <div id="stillArea" style="display:none;">
       <div class="x-grid" id="stillStats"></div>
+      <div class="banner" style="margin-bottom:18px;">
+        <span>Back up your still log any time. The backup file can restore everything if data is ever lost; restoring only adds missing entries, it never deletes.</span>
+        <span style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="btn small" onclick="exportStillsCsv()">Export spreadsheet</button>
+          <button type="button" class="btn small" onclick="exportStillsBackup()">Download backup</button>
+          <label class="btn small ghost" for="stillsRestoreFile" style="cursor:pointer;">Restore backup</label>
+          <input type="file" id="stillsRestoreFile" accept=".json,application/json" hidden onchange="restoreStillsBackup(this)">
+        </span>
+      </div>
       <div class="section-title">Stations <span class="still-status" id="stillStatus"></span></div>
       <div class="stations" id="stations"></div>
 
@@ -1687,6 +1696,7 @@ let storm = null; // storm planner slider state, per session
 
 async function loadStills(){
   try{
+    const left = await flushOutbox();                  // upload anything saved offline first
     const d = await api('stills', { auth:true });
     stills = Object.assign(emptyStills(), d || {});
     STATION_IDS.forEach(id => {
@@ -1695,7 +1705,7 @@ async function loadStills(){
     });
     if(!Array.isArray(stills.pending)) stills.pending = [];
     stillsLoaded = true;
-    setStillStatus('');
+    if(left) showUnsaved(); else setStillStatus('');
   } catch(e){
     stillsLoaded = false;
     console.error('Failed to load still log', e);
@@ -1703,6 +1713,37 @@ async function loadStills(){
   }
 }
 async function stillsPost(body){ return api('stills', { method:'POST', auth:true, body }); }
+
+// Safety queue: if a save fails (connection drop, deploy in progress), the change
+// is kept on this device and uploaded automatically on the next save or login.
+const OUTBOX_KEY = 'cassanova-stills-outbox';
+function readOutbox(){ try{ return JSON.parse(localStorage.getItem(OUTBOX_KEY) || '[]'); } catch(e){ return []; } }
+function writeOutbox(list){ try{ localStorage.setItem(OUTBOX_KEY, JSON.stringify(list)); } catch(e){} }
+let flushing = null;
+async function flushOutbox(){
+  if(flushing) return flushing;
+  flushing = (async () => {
+    let list = readOutbox();
+    while(list.length){
+      try{ await stillsPost(list[0]); } catch(e){ break; }
+      list = readOutbox(); list.shift(); writeOutbox(list);
+    }
+    flushing = null;
+    return readOutbox().length;
+  })();
+  return flushing;
+}
+// Save one change. Returns true when the server has it.
+async function saveOp(body){
+  if(readOutbox().length) await flushOutbox();         // keep changes in order
+  if(readOutbox().length){ writeOutbox(readOutbox().concat([body])); showUnsaved(); return false; }
+  try{ await stillsPost(body); setStillStatus('Saved'); return true; }
+  catch(e){ writeOutbox(readOutbox().concat([body])); showUnsaved(e); return false; }
+}
+function showUnsaved(e){
+  const n = readOutbox().length;
+  setStillStatus(n + ' change' + (n===1?'':'s') + ' kept on this device, will upload automatically' + (e ? ' (' + e.message + ')' : ''), true);
+}
 function setStillStatus(t, err){
   ['stillStatus','pricingStatus'].forEach(id => { const el=document.getElementById(id); if(el){ el.textContent=t; el.classList.toggle('err', !!err); } });
 }
@@ -1786,8 +1827,7 @@ function setPricing(key, val){
   renderPricing();
   clearTimeout(pricingSaveTimer);
   pricingSaveTimer = setTimeout(async () => {
-    try{ await stillsPost({ op:'pricing', pricing: stills.pricing }); setStillStatus('Saved'); }
-    catch(e){ setStillStatus('Could not save pricing: ' + e.message, true); }
+    await saveOp({ op:'pricing', pricing: stills.pricing });
   }, 500);
 }
 
@@ -1945,8 +1985,7 @@ const stationTimers = {};
 function saveStation(id, now){
   clearTimeout(stationTimers[id]);
   const send = async () => {
-    try{ await stillsPost({ op:'station', id, station: stills.stations[id] }); setStillStatus('Saved'); }
-    catch(e){ setStillStatus('Could not save station: ' + e.message, true); }
+    await saveOp({ op:'station', id, station: JSON.parse(JSON.stringify(stills.stations[id])) });
   };
   if(now) send(); else stationTimers[id] = setTimeout(send, 600);
 }
@@ -1979,13 +2018,8 @@ async function logRun(id, tier){
   stills.runs.push(run);
   s.brewing = false; s.startedAt = null;
   renderStill();
-  try{
-    await stillsPost({ op:'run', run });
-    await stillsPost({ op:'station', id, station: s });
-    setStillStatus('Saved');
-  } catch(e){
-    setStillStatus('Could not save that run: ' + e.message, true);
-  }
+  await saveOp({ op:'run', run });
+  await saveOp({ op:'station', id, station: JSON.parse(JSON.stringify(s)) });
 }
 async function collectBatch(id){
   const s = stills.stations[id];
@@ -1993,31 +2027,68 @@ async function collectBatch(id){
   stills.pending.push(item);
   s.brewing = false; s.startedAt = null;
   renderStill();
-  try{ await stillsPost({ op:'collect', id, pending: item }); setStillStatus('Saved'); }
-  catch(e){ setStillStatus('Could not save that batch: ' + e.message, true); }
+  await saveOp({ op:'collect', id, pending: item });
 }
 async function ratePending(pid, tier){
   const p = stills.pending.find(x => x.id === pid); if(!p) return;
   stills.pending = stills.pending.filter(x => x.id !== pid);
   stills.runs.push(Object.assign({}, p, { tier }));
   renderStill();
-  try{ await stillsPost({ op:'rate', id: pid, tier }); setStillStatus('Saved'); }
-  catch(e){ setStillStatus('Could not save that rating: ' + e.message, true); }
+  await saveOp({ op:'rate', id: pid, tier });
 }
 function discardPending(pid){
   showConfirm('Remove this batch without recording a result?', async () => {
     stills.pending = stills.pending.filter(x => x.id !== pid);
     renderStill();
-    try{ await stillsPost({ op:'discardPending', id: pid }); setStillStatus('Saved'); }
-    catch(e){ setStillStatus('Could not remove that batch: ' + e.message, true); }
+    await saveOp({ op:'discardPending', id: pid });
   });
 }
+// ---------- Backup / export ----------
+function downloadFile(name, text, type){
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a'); a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const stamp = () => new Date().toISOString().slice(0,16).replace('T','_').replace(':','');
+function exportStillsBackup(){
+  const data = { app:'cassanova-still-log', version:1, exportedAt:new Date().toISOString(), runs:stills.runs, pending:stills.pending, stations:stills.stations, pricing:stills.pricing };
+  downloadFile('still-log-backup_' + stamp() + '.json', JSON.stringify(data, null, 2), 'application/json');
+}
+function exportStillsCsv(){
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g,'""') + '"';
+  const head = ['Date','Station','Status','Result','Weight kg'];
+  for(let i=1;i<=5;i++) head.push(`Slot ${i} Ingredient`, `Slot ${i} Qty`, `Slot ${i} Gauge`);
+  const row = (r, status) => {
+    const out = [new Date(r.at).toLocaleString(), 'Station ' + r.station, status, r.tier ? TIER_NAMES[r.tier] : '', (Math.round(barrelKg(r.slots)*10)/10)];
+    (r.slots || []).forEach(sl => out.push(sl.ing ? ING[sl.ing].name : '', sl.ing ? sl.qty : '', sl.ing ? (sl.gauge == null ? '' : sl.gauge) : ''));
+    return out.map(q).join(',');
+  };
+  const lines = [head.map(q).join(',')]
+    .concat(stills.runs.slice().sort((a,b)=>a.at-b.at).map(r => row(r, 'Rated')))
+    .concat(stills.pending.slice().sort((a,b)=>a.at-b.at).map(p => row(p, 'Awaiting result')));
+  downloadFile('still-log_' + stamp() + '.csv', lines.join('\n'), 'text/csv');
+}
+async function restoreStillsBackup(input){
+  const file = input.files && input.files[0]; input.value = '';
+  if(!file) return;
+  let data;
+  try{ data = JSON.parse(await file.text()); } catch(e){ setStillStatus('That file is not a still log backup.', true); return; }
+  const runs = Array.isArray(data.runs) ? data.runs : [], pending = Array.isArray(data.pending) ? data.pending : [];
+  if(!runs.length && !pending.length){ setStillStatus('That backup has no runs in it.', true); return; }
+  setStillStatus('Restoring…');
+  try{
+    const res = await stillsPost({ op:'import', runs, pending });
+    await loadStills(); renderStill();
+    setStillStatus('Restored ' + (res && res.added || 0) + ' missing entr' + ((res && res.added) === 1 ? 'y' : 'ies') + ' from backup');
+  } catch(e){ setStillStatus('Restore failed: ' + e.message, true); }
+}
+
 function deleteRun(runId){
   showConfirm('Delete this run from the still log?', async () => {
     stills.runs = stills.runs.filter(r => r.id !== runId);
     renderStill();
-    try{ await stillsPost({ op:'deleteRun', id: runId }); setStillStatus('Saved'); }
-    catch(e){ setStillStatus('Could not delete that run: ' + e.message, true); }
+    await saveOp({ op:'deleteRun', id: runId });
   });
 }
 
