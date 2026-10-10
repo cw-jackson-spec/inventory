@@ -263,6 +263,18 @@
   .weight-bar{height:6px;background:var(--bg);border:1px solid var(--border);}
   .weight-bar span{display:block;height:100%;background:var(--profit);}
   .barrel{display:inline-flex;flex-wrap:wrap;gap:4px 6px;}
+  .lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:26px;align-items:start;}
+  .lane{background:var(--panel);border:1px solid var(--border);min-width:0;}
+  .lane-head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border);font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;font-size:14px;}
+  .lane.t5{border-color:var(--t5);background:var(--t5-bg);}
+  .lane-body{display:flex;flex-direction:column;gap:8px;padding:10px;}
+  .lane-empty{color:var(--text-faint);font-size:11px;text-align:center;padding:8px 0;}
+  .rcard{border:1px solid var(--border-soft);background:var(--bg);padding:8px;display:flex;flex-direction:column;gap:6px;}
+  .rcard .barrel{flex-direction:column;align-items:flex-start;}
+  .rcard-meta{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--text-faint);}
+  .rate-row{display:flex;flex-wrap:wrap;gap:4px;}
+  .rate-row .res-btn{padding:4px 7px;font-size:12px;}
+  .gauge-ticks{display:flex;justify-content:space-between;font-size:9px;color:var(--text-faint);padding:0 2px;margin-top:-2px;}
   .chip{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid var(--border);font-size:12px;white-space:nowrap;}
   .chip b{font-weight:700;}
   .tbl-scroll{overflow-x:auto;}
@@ -377,13 +389,16 @@
       <div class="section-title">Stations <span class="still-status" id="stillStatus"></span></div>
       <div class="stations" id="stations"></div>
 
-      <div class="section-title">Recipe board
-        <span style="display:flex;gap:12px;flex-wrap:wrap;font-weight:500;font-size:11px;" id="tierLegend"></span>
-      </div>
+      <div class="section-title">Awaiting results <span class="still-status" id="pendingCount"></span></div>
+      <div class="field-note" style="margin-bottom:10px;">Batches you've collected but haven't checked yet. Rate them here once you know the level. The station is already free for the next brew.</div>
       <div class="tbl-scroll"><table>
-        <thead><tr><th>Rank</th><th>Barrel (slot · ingredient × qty · gauge)</th><th class="num">Weight</th><th class="num">Runs</th><th>Best Result</th><th>Results Seen</th></tr></thead>
-        <tbody id="boardBody"></tbody>
+        <thead><tr><th>Collected</th><th>Station</th><th>Barrel (slot · ingredient × qty · gauge)</th><th>Rate result</th><th></th></tr></thead>
+        <tbody id="pendingBody"></tbody>
       </table></div>
+
+      <div class="section-title">Recipe board</div>
+      <div class="field-note" style="margin-bottom:10px;">Each recipe sits under the best level it has reached. Dots show every result it has produced.</div>
+      <div class="lanes" id="boardLanes"></div>
 
       <div class="section-title">Run log</div>
       <div class="tbl-scroll"><table>
@@ -1664,7 +1679,7 @@ const PRICE_FIELDS = [
 function emptyStills(){
   const stations = {};
   STATION_IDS.forEach(id => stations[id] = { slots: emptySlots(), brewing:false, startedAt:null });
-  return { stations, runs:[], pricing:{} };
+  return { stations, pending:[], runs:[], pricing:{} };
 }
 let stills = emptyStills();
 let stillsLoaded = false;
@@ -1678,6 +1693,7 @@ async function loadStills(){
       if(!stills.stations[id]) stills.stations[id] = emptyStills().stations[id];
       if(!Array.isArray(stills.stations[id].slots)) stills.stations[id].slots = emptySlots();
     });
+    if(!Array.isArray(stills.pending)) stills.pending = [];
     stillsLoaded = true;
     setStillStatus('');
   } catch(e){
@@ -1856,7 +1872,8 @@ function slotHtml(id, s, i){
       <select id="${id}-ing${i}" aria-label="Slot ${i+1} ingredient" onchange="setSlot('${id}',${i},'ing',this.value)" ${dis}>${opts}</select>
       <div class="stepper"><button type="button" onclick="bumpSlot('${id}',${i},-1)" aria-label="Less in slot ${i+1}" ${sl.ing?'':'disabled'}>−</button><input type="number" min="0" max="999" id="${id}-qty${i}" aria-label="Slot ${i+1} quantity" value="${sl.qty}" ${s.brewing||!sl.ing?'readonly':''} onchange="setSlot('${id}',${i},'qty',this.value)"><button type="button" onclick="bumpSlot('${id}',${i},1)" aria-label="More in slot ${i+1}" ${sl.ing?'':'disabled'}>+</button></div>
     </div>
-    <div class="gauge-row"><input type="range" min="0" max="100" step="5" id="${id}-g${i}" aria-label="Slot ${i+1} gauge" value="${sl.gauge}" style="accent-color:var(--${c})" ${dis} oninput="document.getElementById('${id}-g${i}-v').textContent=this.value" onchange="setSlot('${id}',${i},'gauge',this.value)"><span id="${id}-g${i}-v" style="color:var(--${c})">${sl.gauge}</span></div>
+    <div class="gauge-row"><input type="range" min="0" max="100" step="25" id="${id}-g${i}" aria-label="Slot ${i+1} gauge" value="${sl.gauge}" style="accent-color:var(--${c})" ${dis} oninput="document.getElementById('${id}-g${i}-v').textContent=this.value" onchange="setSlot('${id}',${i},'gauge',this.value)"><span id="${id}-g${i}-v" style="color:var(--${c})">${sl.gauge}</span></div>
+    <div class="gauge-ticks" style="margin-right:42px"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
   </div>`;
 }
 
@@ -1873,6 +1890,7 @@ function renderStill(){
     `<div class="cell"><div class="label">Runs logged</div><div class="value">${stills.runs.length}</div></div>
      <div class="cell"><div class="label">Recipes tried</div><div class="value">${recs.length}</div></div>
      <div class="cell"><div class="label">Brewing now</div><div class="value">${brewing} / 5</div></div>
+     <div class="cell"><div class="label">Awaiting results</div><div class="value">${stills.pending.length}</div></div>
      <div class="cell"><div class="label">Best so far</div><div class="value">${recs.length ? tierTag(recs[0].best) : '–'}</div></div>`;
 
   document.getElementById('stations').innerHTML = STATION_IDS.map((id, i) => {
@@ -1880,9 +1898,11 @@ function renderStill(){
     const filled = filledSlots(s.slots).length;
     const kg = barrelKg(s.slots), over = kg > BARREL_KG;
     const prev = filled ? recMap[moonKey(s.slots)] : null;
-    const tried = prev ? `<div class="tried">Tried ${prev.runs}× before · best ${TIER_NAMES[prev.best]}</div>` : '';
+    const waiting = filled ? stills.pending.filter(p => moonKey(p.slots) === moonKey(s.slots)).length : 0;
+    const tried = (prev || waiting) ? `<div class="tried">${prev ? `Tried ${prev.runs}× before · best ${TIER_NAMES[prev.best]}` : ''}${prev && waiting ? '<br>' : ''}${waiting ? `${waiting} of this recipe awaiting results` : ''}</div>` : '';
     const actions = s.brewing
-      ? `<div class="ing-row"><label>What came out?</label></div>
+      ? `<button type="button" class="btn primary" onclick="collectBatch('${id}')">Collected · rate later</button>
+         <div class="ing-row"><label>Already know the level?</label></div>
          <div class="res-grid">${[1,2,3,4,5].map(t => `<button type="button" class="res-btn t${t}" onclick="logRun('${id}',${t})"><span class="tier-dot tier-${t}"></span>${TIER_NAMES[t]}</button>`).join('')}</div>
          <button type="button" class="btn ghost small" onclick="cancelBatch('${id}')">Cancel batch</button>`
       : `<button type="button" class="btn primary" onclick="startBatch('${id}')" ${filled && !over ? '' : 'disabled'}>Start batch</button>`;
@@ -1895,12 +1915,23 @@ function renderStill(){
       ${tried}${actions}</div>`;
   }).join('');
 
-  document.getElementById('tierLegend').innerHTML = [1,2,3,4,5].map(tierTag).join('');
+  const pend = stills.pending.slice().sort((a,b) => a.at - b.at);
+  document.getElementById('pendingCount').textContent = pend.length ? pend.length + ' waiting' : '';
+  document.getElementById('pendingBody').innerHTML = pend.length
+    ? pend.map(p => `<tr><td>${new Date(p.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</td><td>Station ${escapeHtml(p.station)}</td>
+        <td>${barrelChips(p.slots)}</td>
+        <td><div class="rate-row">${[1,2,3,4,5].map(t => `<button type="button" class="res-btn t${t}" title="${TIER_NAMES[t]}" onclick="ratePending('${escapeHtml(p.id)}',${t})"><span class="tier-dot tier-${t}"></span>${TIER_NAMES[t]}</button>`).join('')}</div></td>
+        <td><button class="btn small danger" title="Discard without a result" onclick="discardPending('${escapeHtml(p.id)}')">✕</button></td></tr>`).join('')
+    : `<tr><td colspan="5" style="color:var(--text-faint);text-align:center;padding:16px;">Nothing waiting. On a brewing station, tap "Collected · rate later" to park a batch here and free the station.</td></tr>`;
 
-  document.getElementById('boardBody').innerHTML = recs.length
-    ? recs.map((r,i) => `<tr class="${r.best===5?'legend-row':''}"><td>${i+1}</td><td>${barrelChips(r.slots)}</td><td class="num">${kgText(barrelKg(r.slots))}</td><td class="num">${r.runs}</td><td>${tierTag(r.best)}</td>
-        <td>${Object.keys(r.seen).sort((a,b)=>b-a).map(t => `<span class="tier-tag" title="${TIER_NAMES[t]}"><span class="tier-dot tier-${t}"></span>${r.seen[t]}</span>`).join(' &nbsp;')}</td></tr>`).join('')
-    : `<tr><td colspan="6" style="color:var(--text-faint);text-align:center;padding:16px;">No runs yet. Fill a station's slots, start the batch, then tag the result. Recipes rank here, best first.</td></tr>`;
+  document.getElementById('boardLanes').innerHTML = [5,4,3,2,1].map(t => {
+    const inLane = recs.filter(r => r.best === t);
+    return `<div class="lane ${t===5?'t5':''}"><div class="lane-head">${tierTag(t)}<span style="color:var(--text-faint);font-size:12px;">${inLane.length}</span></div>
+      <div class="lane-body">${inLane.length ? inLane.map(r => `<div class="rcard">${barrelChips(r.slots)}
+        <div class="rcard-meta"><span>${kgText(barrelKg(r.slots))} · ${r.runs} run${r.runs===1?'':'s'}</span>
+        <span>${Object.keys(r.seen).sort((a,b)=>b-a).map(x => `<span class="tier-tag" title="${TIER_NAMES[x]}: ${r.seen[x]}"><span class="tier-dot tier-${x}"></span>${r.seen[x]}</span>`).join(' ')}</span></div></div>`).join('')
+        : `<div class="lane-empty">No recipes yet</div>`}</div></div>`;
+  }).join('');
 
   const runs = stills.runs.slice().sort((a,b) => b.at - a.at);
   document.getElementById('runBody').innerHTML = runs.length
@@ -1928,7 +1959,7 @@ function setSlot(id, i, field, v){
   } else if(field === 'qty'){
     sl.qty = sl.ing ? Math.max(0, Math.min(999, Math.round(Number(v)||0))) : 0;
   } else if(field === 'gauge'){
-    sl.gauge = Math.max(0, Math.min(100, Math.round(Number(v)||0)));
+    sl.gauge = Math.round(Math.max(0, Math.min(100, Number(v)||0)) / 25) * 25;
   }
   s.slots = s.slots.slice(); s.slots[i] = sl;
   renderStill(); saveStation(id);
@@ -1955,6 +1986,31 @@ async function logRun(id, tier){
   } catch(e){
     setStillStatus('Could not save that run: ' + e.message, true);
   }
+}
+async function collectBatch(id){
+  const s = stills.stations[id];
+  const item = { id: crypto.randomUUID(), station: id.slice(1), slots: s.slots.map(sl => Object.assign({}, sl)), at: Date.now() };
+  stills.pending.push(item);
+  s.brewing = false; s.startedAt = null;
+  renderStill();
+  try{ await stillsPost({ op:'collect', id, pending: item }); setStillStatus('Saved'); }
+  catch(e){ setStillStatus('Could not save that batch: ' + e.message, true); }
+}
+async function ratePending(pid, tier){
+  const p = stills.pending.find(x => x.id === pid); if(!p) return;
+  stills.pending = stills.pending.filter(x => x.id !== pid);
+  stills.runs.push(Object.assign({}, p, { tier }));
+  renderStill();
+  try{ await stillsPost({ op:'rate', id: pid, tier }); setStillStatus('Saved'); }
+  catch(e){ setStillStatus('Could not save that rating: ' + e.message, true); }
+}
+function discardPending(pid){
+  showConfirm('Remove this batch without recording a result?', async () => {
+    stills.pending = stills.pending.filter(x => x.id !== pid);
+    renderStill();
+    try{ await stillsPost({ op:'discardPending', id: pid }); setStillStatus('Saved'); }
+    catch(e){ setStillStatus('Could not remove that batch: ' + e.message, true); }
+  });
 }
 function deleteRun(runId){
   showConfirm('Delete this run from the still log?', async () => {
