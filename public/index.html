@@ -244,6 +244,27 @@
   .res-btn:hover{border-color:var(--amber);}
   .res-btn.t5{border-color:var(--t5);background:var(--t5-bg);}
   tr.legend-row td{background:var(--t5-bg) !important;}
+  :root{ --g1:#ffcc00; --g2:#19f0c8; --g3:#14bff5; --g4:#b400ff; --g5:#ff7ae6; }
+  .gauge-head{display:flex;justify-content:space-between;font-size:12px;color:var(--text-dim);margin-top:2px;}
+  .gauge-row{display:grid;grid-template-columns:1fr 34px;align-items:center;gap:8px;}
+  .gauge-row input[type=range]{width:100%;margin:0;height:18px;}
+  .gauge-row span{font-size:12px;text-align:right;font-variant-numeric:tabular-nums;}
+  .station.brewing .gauge-row input{pointer-events:none;opacity:.75;}
+  .slot{display:flex;flex-direction:column;gap:4px;padding:7px 0;border-top:1px dashed var(--border-soft);}
+  .slot-top{display:grid;grid-template-columns:22px 1fr auto;align-items:center;gap:6px;}
+  .slot-n{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border:1px solid;font-weight:700;font-size:12px;}
+  .slot select{min-width:0;width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:'Space Mono',monospace;font-size:11px;padding:2px 2px;height:26px;}
+  .slot select:focus{outline:none;border-color:var(--amber);}
+  .slot .stepper input{width:34px;}
+  .slot .stepper button{width:22px;}
+  .slot .stepper button:disabled{opacity:.3;cursor:not-allowed;}
+  .station.brewing .slot select{opacity:.8;}
+  .weight{display:flex;flex-direction:column;gap:4px;padding-top:6px;border-top:1px dashed var(--border-soft);}
+  .weight-bar{height:6px;background:var(--bg);border:1px solid var(--border);}
+  .weight-bar span{display:block;height:100%;background:var(--profit);}
+  .barrel{display:inline-flex;flex-wrap:wrap;gap:4px 6px;}
+  .chip{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid var(--border);font-size:12px;white-space:nowrap;}
+  .chip b{font-weight:700;}
   .tbl-scroll{overflow-x:auto;}
   .still-status{font-size:11px;color:var(--text-faint);letter-spacing:1px;}
   .still-status.err{color:var(--loss);}
@@ -360,13 +381,13 @@
         <span style="display:flex;gap:12px;flex-wrap:wrap;font-weight:500;font-size:11px;" id="tierLegend"></span>
       </div>
       <div class="tbl-scroll"><table>
-        <thead><tr><th>Rank</th><th class="num">Apple</th><th class="num">Corn</th><th class="num">Bread</th><th class="num">Barley</th><th class="num">Water</th><th class="num">Runs</th><th>Best Result</th><th>Results Seen</th></tr></thead>
+        <thead><tr><th>Rank</th><th>Barrel (slot · ingredient × qty · gauge)</th><th class="num">Weight</th><th class="num">Runs</th><th>Best Result</th><th>Results Seen</th></tr></thead>
         <tbody id="boardBody"></tbody>
       </table></div>
 
       <div class="section-title">Run log</div>
       <div class="tbl-scroll"><table>
-        <thead><tr><th>When</th><th>Station</th><th class="num">Apple</th><th class="num">Corn</th><th class="num">Bread</th><th class="num">Barley</th><th class="num">Water</th><th>Result</th><th></th></tr></thead>
+        <thead><tr><th>When</th><th>Station</th><th>Barrel (slot · ingredient × qty · gauge)</th><th>Result</th><th></th></tr></thead>
         <tbody id="runBody"></tbody>
       </table></div>
     </div>
@@ -1610,8 +1631,15 @@ function deleteOrder(id){
 // ---------- Pricing + Still Log (owner-only, stored under "stills") ----------
 // =====================================================================
 const STATION_IDS = ['s1','s2','s3','s4','s5'];
-const MOON_INGS = [['apple','Moldy Apple'],['corn','Moldy Corn'],['bread','Moldy Bread'],['barley','Moldy Barley'],['water','Water']];
+// Barrel ingredients with weight per unit in kg (from the barrel screen: water 0.5 kg,
+// bread / corn / barley 0.1 kg; apple assumed 0.1 kg until confirmed).
+const MOON_INGS = [['water','Water',0.5,'Water'],['apple','Moldy Apple',0.1,'Apple'],['corn','Moldy Corn',0.1,'Corn'],['bread','Moldy Bread',0.1,'Bread'],['barley','Moldy Barley',0.1,'Barley']];
+const ING = Object.fromEntries(MOON_INGS.map(([k,name,kg,short]) => [k, {name, kg, short}]));
+const BARREL_KG = 50;
 const TIER_NAMES = {1:'Below Average',2:'Average',3:'Above Average',4:'Excellent',5:'Legendary'};
+// Slot N in the barrel pairs with gauge slider N (yellow, teal, blue, purple, pink), 0-100.
+const SLOT_COLORS = ['g1','g2','g3','g4','g5'];
+const emptySlots = () => [0,1,2,3,4].map(() => ({ ing:'', qty:0, gauge:50 }));
 
 // Costs that can come from an inventory item's Cost / Unit, matched by item name.
 const COST_FIELDS = [
@@ -1635,7 +1663,7 @@ const PRICE_FIELDS = [
 
 function emptyStills(){
   const stations = {};
-  STATION_IDS.forEach(id => stations[id] = { formula:{apple:0,corn:0,bread:0,barley:0,water:0}, brewing:false, startedAt:null });
+  STATION_IDS.forEach(id => stations[id] = { slots: emptySlots(), brewing:false, startedAt:null });
   return { stations, runs:[], pricing:{} };
 }
 let stills = emptyStills();
@@ -1646,7 +1674,10 @@ async function loadStills(){
   try{
     const d = await api('stills', { auth:true });
     stills = Object.assign(emptyStills(), d || {});
-    STATION_IDS.forEach(id => { if(!stills.stations[id]) stills.stations[id] = emptyStills().stations[id]; });
+    STATION_IDS.forEach(id => {
+      if(!stills.stations[id]) stills.stations[id] = emptyStills().stations[id];
+      if(!Array.isArray(stills.stations[id].slots)) stills.stations[id].slots = emptySlots();
+    });
     stillsLoaded = true;
     setStillStatus('');
   } catch(e){
@@ -1794,17 +1825,39 @@ function renderStorm(){
 function setStorm(key, val){ storm[key] = Number(val); renderStorm(); }
 
 // ---------- Still Log ----------
-const moonKey = f => MOON_INGS.map(([k]) => Number(f[k])||0).join('-');
+// A recipe is the 5 barrel slots in order: ingredient, quantity, and that slot's gauge.
+const filledSlots = slots => (slots || []).map((sl, i) => Object.assign({ n: i+1 }, sl)).filter(sl => sl.ing && sl.qty > 0);
+const moonKey = slots => (slots || []).map(sl => (sl.ing && sl.qty > 0) ? `${sl.ing}:${sl.qty}@${sl.gauge == null ? '?' : sl.gauge}` : '-').join('|');
+const barrelKg = slots => filledSlots(slots).reduce((t, sl) => t + sl.qty * ((ING[sl.ing] || {}).kg || 0), 0);
+const kgText = kg => (Math.round(kg * 10) / 10).toLocaleString(undefined, { maximumFractionDigits: 1 }) + ' kg';
 const tierTag = t => `<span class="tier-tag"><span class="tier-dot tier-${t}"></span>${TIER_NAMES[t]}</span>`;
+const barrelChips = slots => {
+  const f = filledSlots(slots);
+  if(!f.length) return '<span style="color:var(--text-faint)">empty</span>';
+  return `<span class="barrel">${f.map(sl => `<span class="chip"><b style="color:var(--${SLOT_COLORS[sl.n-1]})">${sl.n}</b> ${escapeHtml((ING[sl.ing]||{}).name || sl.ing)} ×${sl.qty} <span style="color:var(--${SLOT_COLORS[sl.n-1]})">@${sl.gauge == null ? '?' : sl.gauge}</span></span>`).join('')}</span>`;
+};
 
 function moonRecipes(){
   const m = {};
   stills.runs.forEach(r => {
-    const k = moonKey(r.formula);
-    if(!m[k]) m[k] = { formula:r.formula, runs:0, best:0, seen:{} };
+    const k = moonKey(r.slots);
+    if(!m[k]) m[k] = { slots: r.slots, runs:0, best:0, seen:{} };
     m[k].runs++; m[k].best = Math.max(m[k].best, r.tier); m[k].seen[r.tier] = (m[k].seen[r.tier]||0) + 1;
   });
   return Object.values(m).sort((a,b) => b.best-a.best || b.runs-a.runs);
+}
+
+function slotHtml(id, s, i){
+  const sl = s.slots[i], c = SLOT_COLORS[i], dis = s.brewing ? 'disabled' : '';
+  const opts = `<option value="">Empty</option>` + MOON_INGS.map(([k,name,,short]) => `<option value="${k}" ${sl.ing===k?'selected':''} title="${name}">${short}</option>`).join('');
+  return `<div class="slot">
+    <div class="slot-top">
+      <span class="slot-n" style="color:var(--${c});border-color:var(--${c})">${i+1}</span>
+      <select id="${id}-ing${i}" aria-label="Slot ${i+1} ingredient" onchange="setSlot('${id}',${i},'ing',this.value)" ${dis}>${opts}</select>
+      <div class="stepper"><button type="button" onclick="bumpSlot('${id}',${i},-1)" aria-label="Less in slot ${i+1}" ${sl.ing?'':'disabled'}>−</button><input type="number" min="0" max="999" id="${id}-qty${i}" aria-label="Slot ${i+1} quantity" value="${sl.qty}" ${s.brewing||!sl.ing?'readonly':''} onchange="setSlot('${id}',${i},'qty',this.value)"><button type="button" onclick="bumpSlot('${id}',${i},1)" aria-label="More in slot ${i+1}" ${sl.ing?'':'disabled'}>+</button></div>
+    </div>
+    <div class="gauge-row"><input type="range" min="0" max="100" step="5" id="${id}-g${i}" aria-label="Slot ${i+1} gauge" value="${sl.gauge}" style="accent-color:var(--${c})" ${dis} oninput="document.getElementById('${id}-g${i}-v').textContent=this.value" onchange="setSlot('${id}',${i},'gauge',this.value)"><span id="${id}-g${i}-v" style="color:var(--${c})">${sl.gauge}</span></div>
+  </div>`;
 }
 
 function renderStill(){
@@ -1813,44 +1866,48 @@ function renderStill(){
     return;
   }
   const recs = moonRecipes();
-  const recMap = {}; recs.forEach(r => recMap[moonKey(r.formula)] = r);
+  const recMap = {}; recs.forEach(r => recMap[moonKey(r.slots)] = r);
   const brewing = STATION_IDS.filter(id => stills.stations[id].brewing).length;
 
   document.getElementById('stillStats').innerHTML =
     `<div class="cell"><div class="label">Runs logged</div><div class="value">${stills.runs.length}</div></div>
-     <div class="cell"><div class="label">Formulas tried</div><div class="value">${recs.length}</div></div>
+     <div class="cell"><div class="label">Recipes tried</div><div class="value">${recs.length}</div></div>
      <div class="cell"><div class="label">Brewing now</div><div class="value">${brewing} / 5</div></div>
      <div class="cell"><div class="label">Best so far</div><div class="value">${recs.length ? tierTag(recs[0].best) : '–'}</div></div>`;
 
   document.getElementById('stations').innerHTML = STATION_IDS.map((id, i) => {
     const s = stills.stations[id];
-    const total = MOON_INGS.reduce((n,[k]) => n + (Number(s.formula[k])||0), 0);
-    const prev = recMap[moonKey(s.formula)];
-    const rows = MOON_INGS.map(([k,name]) => `<div class="ing-row"><label for="${id}-${k}">${name}</label>
-      <div class="stepper"><button type="button" onclick="bumpIng('${id}','${k}',-1)" aria-label="Less ${name}">−</button><input type="number" min="0" max="999" id="${id}-${k}" value="${Number(s.formula[k])||0}" ${s.brewing?'readonly':''} onchange="setIng('${id}','${k}',this.value)"><button type="button" onclick="bumpIng('${id}','${k}',1)" aria-label="More ${name}">+</button></div></div>`).join('');
-    const tried = prev && total ? `<div class="tried">Tried ${prev.runs}× before · best ${TIER_NAMES[prev.best]}</div>` : '';
+    const filled = filledSlots(s.slots).length;
+    const kg = barrelKg(s.slots), over = kg > BARREL_KG;
+    const prev = filled ? recMap[moonKey(s.slots)] : null;
+    const tried = prev ? `<div class="tried">Tried ${prev.runs}× before · best ${TIER_NAMES[prev.best]}</div>` : '';
     const actions = s.brewing
       ? `<div class="ing-row"><label>What came out?</label></div>
          <div class="res-grid">${[1,2,3,4,5].map(t => `<button type="button" class="res-btn t${t}" onclick="logRun('${id}',${t})"><span class="tier-dot tier-${t}"></span>${TIER_NAMES[t]}</button>`).join('')}</div>
          <button type="button" class="btn ghost small" onclick="cancelBatch('${id}')">Cancel batch</button>`
-      : `<button type="button" class="btn primary" onclick="startBatch('${id}')" ${total?'':'disabled'}>Start batch</button>`;
-    return `<div class="station ${s.brewing?'brewing':''}"><div class="station-top"><span class="station-name">Station ${i+1}</span><span class="pill ${s.brewing?'on':''}">${s.brewing?'Brewing':'Idle'}</span></div>
-      ${rows}<div class="ing-row"><label>Total units</label><span>${total}</span></div>${tried}${actions}</div>`;
+      : `<button type="button" class="btn primary" onclick="startBatch('${id}')" ${filled && !over ? '' : 'disabled'}>Start batch</button>`;
+    return `<div class="station ${s.brewing?'brewing':''}">
+      <div class="station-top"><span class="station-name">Station ${i+1}</span><span class="pill ${s.brewing?'on':''}">${s.brewing?'Brewing':'Idle'}</span></div>
+      ${[0,1,2,3,4].map(n => slotHtml(id, s, n)).join('')}
+      <div class="weight"><div class="weight-bar"><span style="width:${Math.min(100, kg / BARREL_KG * 100)}%;${over?'background:var(--loss)':''}"></span></div>
+        <div class="ing-row"><label>Weight</label><span style="${over?'color:var(--loss)':''}">${kgText(kg)} / ${BARREL_KG} kg</span></div>
+        ${over ? `<div class="field-note" style="color:var(--loss)">Over the barrel limit.</div>` : ''}</div>
+      ${tried}${actions}</div>`;
   }).join('');
 
   document.getElementById('tierLegend').innerHTML = [1,2,3,4,5].map(tierTag).join('');
 
   document.getElementById('boardBody').innerHTML = recs.length
-    ? recs.map((r,i) => `<tr class="${r.best===5?'legend-row':''}"><td>${i+1}</td>${MOON_INGS.map(([k]) => `<td class="num">${Number(r.formula[k])||0}</td>`).join('')}<td class="num">${r.runs}</td><td>${tierTag(r.best)}</td>
+    ? recs.map((r,i) => `<tr class="${r.best===5?'legend-row':''}"><td>${i+1}</td><td>${barrelChips(r.slots)}</td><td class="num">${kgText(barrelKg(r.slots))}</td><td class="num">${r.runs}</td><td>${tierTag(r.best)}</td>
         <td>${Object.keys(r.seen).sort((a,b)=>b-a).map(t => `<span class="tier-tag" title="${TIER_NAMES[t]}"><span class="tier-dot tier-${t}"></span>${r.seen[t]}</span>`).join(' &nbsp;')}</td></tr>`).join('')
-    : `<tr><td colspan="9" style="color:var(--text-faint);text-align:center;padding:16px;">No runs yet. Start a batch, then tag the result. Formulas rank here, best first.</td></tr>`;
+    : `<tr><td colspan="6" style="color:var(--text-faint);text-align:center;padding:16px;">No runs yet. Fill a station's slots, start the batch, then tag the result. Recipes rank here, best first.</td></tr>`;
 
   const runs = stills.runs.slice().sort((a,b) => b.at - a.at);
   document.getElementById('runBody').innerHTML = runs.length
     ? runs.map(r => `<tr><td>${new Date(r.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</td><td>Station ${escapeHtml(r.station)}</td>
-        ${MOON_INGS.map(([k]) => `<td class="num">${Number(r.formula[k])||0}</td>`).join('')}<td>${tierTag(r.tier)}</td>
+        <td>${barrelChips(r.slots)}</td><td>${tierTag(r.tier)}</td>
         <td><button class="btn small danger" onclick="deleteRun('${escapeHtml(r.id)}')">✕</button></td></tr>`).join('')
-    : `<tr><td colspan="9" style="color:var(--text-faint);text-align:center;padding:16px;">Finished batches show up here with their formula and result.</td></tr>`;
+    : `<tr><td colspan="5" style="color:var(--text-faint);text-align:center;padding:16px;">Finished batches show up here with their barrel setup and result.</td></tr>`;
 }
 
 const stationTimers = {};
@@ -1862,12 +1919,21 @@ function saveStation(id, now){
   };
   if(now) send(); else stationTimers[id] = setTimeout(send, 600);
 }
-function setIng(id, k, v){
+function setSlot(id, i, field, v){
   const s = stills.stations[id]; if(s.brewing) return;
-  s.formula[k] = Math.max(0, Math.min(999, Math.round(Number(v)||0)));
+  const sl = Object.assign({}, s.slots[i]);
+  if(field === 'ing'){
+    sl.ing = MOON_INGS.some(([k]) => k === v) ? v : '';
+    if(!sl.ing) sl.qty = 0; else if(!sl.qty) sl.qty = 1;
+  } else if(field === 'qty'){
+    sl.qty = sl.ing ? Math.max(0, Math.min(999, Math.round(Number(v)||0))) : 0;
+  } else if(field === 'gauge'){
+    sl.gauge = Math.max(0, Math.min(100, Math.round(Number(v)||0)));
+  }
+  s.slots = s.slots.slice(); s.slots[i] = sl;
   renderStill(); saveStation(id);
 }
-function bumpIng(id, k, d){ setIng(id, k, (Number(stills.stations[id].formula[k])||0) + d); }
+function bumpSlot(id, i, d){ setSlot(id, i, 'qty', (Number(stills.stations[id].slots[i].qty)||0) + d); }
 function startBatch(id){
   const s = stills.stations[id]; s.brewing = true; s.startedAt = Date.now();
   renderStill(); saveStation(id, true);
@@ -1878,7 +1944,7 @@ function cancelBatch(id){
 }
 async function logRun(id, tier){
   const s = stills.stations[id];
-  const run = { id: crypto.randomUUID(), station: id.slice(1), formula: Object.assign({}, s.formula), tier, at: Date.now() };
+  const run = { id: crypto.randomUUID(), station: id.slice(1), slots: s.slots.map(sl => Object.assign({}, sl)), tier, at: Date.now() };
   stills.runs.push(run);
   s.brewing = false; s.startedAt = null;
   renderStill();
