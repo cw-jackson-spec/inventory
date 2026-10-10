@@ -6,11 +6,19 @@
 // ingredient, a quantity, and the position (0-100) of the gauge slider that
 // matches that slot (slot 1 = slider 1, and so on).
 //
-// GET  -> { stations, runs, pricing }
+// Gauges sit at fixed notches: 0, 25, 50, 75, 100.
+//
+// A finished batch can be "collected" before its result is known: it moves to
+// `pending` (awaiting a rating) and frees the station for the next brew.
+//
+// GET  -> { stations, pending, runs, pricing }
 // POST -> one targeted change per request (read-modify-write on the server):
 //   { op: 'station',   id: 's1'..'s5', station: { slots, brewing, startedAt } }
 //   { op: 'run',       run: { id, station, slots, tier, at } }
 //   { op: 'deleteRun', id }
+//   { op: 'collect',   id: 's1'..'s5', pending: { id, station, slots, at } }  station -> pending, station freed
+//   { op: 'rate',      id: <pending id>, tier }                               pending -> runs
+//   { op: 'discardPending', id }
 //   { op: 'pricing',   pricing: { ...settings } }
 const { getStore, connectLambda } = require('@netlify/blobs');
 
@@ -40,7 +48,7 @@ function cleanSlots(slots, keepNullGauge) {
   for (let i = 0; i < 5; i++) {
     const s = (Array.isArray(slots) && slots[i]) || {};
     const ing = INGREDIENTS.includes(s.ing) ? s.ing : '';
-    const gauge = (s.gauge === null && keepNullGauge) ? null : clampInt(s.gauge, 0, 100, 50);
+    const gauge = (s.gauge === null && keepNullGauge) ? null : Math.round(clampInt(s.gauge, 0, 100, 50) / 25) * 25;
     out.push({ ing, qty: ing ? clampInt(s.qty, 0, 999, 0) : 0, gauge });
   }
   return out;
@@ -69,10 +77,14 @@ function cleanRun(r) {
   };
 }
 
+function cleanPending(p) {
+  return { id: String(p.id), station: String(p.station || ''), slots: cleanSlots(p.slots), at: Number(p.at) || Date.now() };
+}
+
 function emptyDoc() {
   const stations = {};
   STATION_IDS.forEach(id => { stations[id] = cleanStation({}); });
-  return { stations, runs: [], pricing: {} };
+  return { stations, pending: [], runs: [], pricing: {} };
 }
 
 function normalize(doc) {
@@ -83,6 +95,7 @@ function normalize(doc) {
     if (s) base.stations[id] = cleanStation(s);
   });
   base.runs = Array.isArray(doc.runs) ? doc.runs.filter(r => r && r.id).map(cleanRun) : [];
+  base.pending = Array.isArray(doc.pending) ? doc.pending.filter(p => p && p.id).map(cleanPending) : [];
   base.pricing = doc.pricing && typeof doc.pricing === 'object' ? doc.pricing : {};
   return base;
 }
@@ -117,6 +130,26 @@ exports.handler = async function (event) {
         }
         break;
       }
+      case 'collect': {
+        if (!STATION_IDS.includes(body.id) || !body.pending || !body.pending.id) return json(400, { error: 'Unknown station or batch' });
+        if (!doc.pending.some(x => x.id === String(body.pending.id))) doc.pending.push(cleanPending(body.pending));
+        doc.stations[body.id] = Object.assign(doc.stations[body.id], { brewing: false, startedAt: null });
+        break;
+      }
+      case 'rate': {
+        const tier = Math.round(Number(body.tier));
+        if (!(tier >= 1 && tier <= 5)) return json(400, { error: 'Pick a result tier from 1 to 5' });
+        const p = doc.pending.find(x => x.id === String(body.id));
+        if (p) {
+          if (!doc.runs.some(x => x.id === p.id)) doc.runs.push(cleanRun(Object.assign({}, p, { tier })));
+          doc.pending = doc.pending.filter(x => x.id !== p.id);
+          if (doc.runs.length > MAX_RUNS) doc.runs = doc.runs.slice(-MAX_RUNS);
+        }
+        break;
+      }
+      case 'discardPending':
+        doc.pending = doc.pending.filter(x => x.id !== String(body.id));
+        break;
       case 'deleteRun':
         doc.runs = doc.runs.filter(x => x.id !== body.id);
         break;
