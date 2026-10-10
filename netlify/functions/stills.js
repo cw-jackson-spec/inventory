@@ -1,13 +1,15 @@
 // Owner-only. Moonshine still log + pricing settings.
 // Every request must carry an X-Owner-Pin header matching OWNER_PIN.
 //
-// STORAGE LAYOUT (Netlify Blobs, store "cassanova", strong consistency):
-//   stills                  -> { stations, pricing }   small doc, read-modify-write
-//   stills-run/<id>         -> one rated run per key   (never rewritten as a list)
-//   stills-pending/<id>     -> one collected, unrated batch per key
-// Runs and pending batches each live under their own key, so saving one can
-// never overwrite another. Older data that kept runs/pending as arrays inside
-// "stills" is moved to per-key storage automatically on the next request.
+// STORAGE LAYOUT (Netlify Blobs, store "cassanova"):
+//   stills-station/<s1..s5>  -> one station per key
+//   stills-pricing           -> pricing settings
+//   stills-run/<id>          -> one rated run per key
+//   stills-pending/<id>      -> one collected, unrated batch per key
+// Every save replaces only its own key and never reads-then-rewrites a list,
+// so a briefly out-of-date read (Netlify reads can lag up to ~60 s) can never
+// wipe other data. Older versions kept everything in one "stills" doc; that
+// is copied into this layout automatically on the next request.
 //
 // A moonshine recipe is the barrel's 5 slots IN ORDER. Each slot holds one
 // ingredient, a quantity, and the gauge position for that slot (0/25/50/75/100).
@@ -18,13 +20,15 @@
 //   { op: 'pricing', pricing: {...} }
 //   { op: 'run', run: { id, station, slots, tier, at } }          rated directly
 //   { op: 'deleteRun', id }
-//   { op: 'collect', id: 's1'..'s5', pending: { id, station, slots, at } }
-//   { op: 'rate', id: <pending id>, tier }                          pending -> run
+//   { op: 'collect', id: 's1'..'s5', pending: { id, station, slots, at }, station }
+//   { op: 'rate', id, tier, pending: { id, station, slots, at } } pending -> run
 //   { op: 'discardPending', id }
 //   { op: 'import', runs: [...], pending: [...] }                   restore a backup (adds, never removes)
 const { getStore, connectLambda } = require('@netlify/blobs');
 
-const KEY = 'stills';
+const LEGACY_KEY = 'stills';
+const STATION_PREFIX = 'stills-station/';
+const PRICING_KEY = 'stills-pricing';
 const RUN_PREFIX = 'stills-run/';
 const PENDING_PREFIX = 'stills-pending/';
 const STATION_IDS = ['s1', 's2', 's3', 's4', 's5'];
@@ -86,29 +90,40 @@ function cleanPending(p) {
   return { id: safeId(p.id), station: String(p.station || '').slice(0, 10), slots: cleanSlots(p.slots), at: Number(p.at) || Date.now() };
 }
 
-function normalizeMain(doc) {
-  const stations = {};
-  STATION_IDS.forEach(id => { stations[id] = cleanStation(doc && doc.stations && doc.stations[id]); });
-  const pricing = doc && doc.pricing && typeof doc.pricing === 'object' ? doc.pricing : {};
-  return { stations, pricing };
-}
-
-async function readAll(store, prefix) {
+async function readPrefix(store, prefix) {
   const { blobs } = await store.list({ prefix });
   const items = await Promise.all(blobs.map(b => store.get(b.key, { type: 'json' })));
   return items.filter(Boolean);
 }
 
-// Move runs/pending that older versions kept inside the "stills" doc into
-// their own keys. Each item is written before the array is dropped, so an
-// interruption can only leave a duplicate, never a loss.
-async function migrate(store, raw) {
-  const runs = Array.isArray(raw && raw.runs) ? raw.runs.filter(r => r && r.id) : [];
-  const pending = Array.isArray(raw && raw.pending) ? raw.pending.filter(p => p && p.id) : [];
-  if (!runs.length && !pending.length) return;
+// Copy anything still in the old single "stills" doc into per-key storage.
+// Runs and pending batches are copied by id (safe to repeat). Stations and
+// pricing are copied only where no per-key copy exists yet. The old doc is
+// then marked as migrated rather than deleted.
+// Returns the copied data so the same request can show it right away.
+async function migrateLegacy(store) {
+  const raw = await store.get(LEGACY_KEY, { type: 'json' });
+  if (!raw || raw.migrated) return null;
+  const runs = Array.isArray(raw.runs) ? raw.runs.filter(r => r && r.id) : [];
+  const pending = Array.isArray(raw.pending) ? raw.pending.filter(p => p && p.id) : [];
   for (const r of runs) { const c = cleanRun(r); if (c.id) await store.setJSON(RUN_PREFIX + c.id, c); }
   for (const p of pending) { const c = cleanPending(p); if (c.id) await store.setJSON(PENDING_PREFIX + c.id, c); }
-  await store.setJSON(KEY, normalizeMain(raw));
+  for (const id of STATION_IDS) {
+    if (raw.stations && raw.stations[id] && !(await store.get(STATION_PREFIX + id, { type: 'json' }))) {
+      await store.setJSON(STATION_PREFIX + id, cleanStation(raw.stations[id]));
+    }
+  }
+  if (raw.pricing && typeof raw.pricing === 'object' && !(await store.get(PRICING_KEY, { type: 'json' }))) {
+    await store.setJSON(PRICING_KEY, raw.pricing);
+  }
+  // Keep the old content alongside the marker, so nothing is ever thrown away.
+  await store.setJSON(LEGACY_KEY, Object.assign({}, raw, { migrated: true, migratedAt: Date.now() }));
+  return {
+    runs: runs.map(cleanRun),
+    pending: pending.map(cleanPending),
+    stations: raw.stations || {},
+    pricing: raw.pricing && typeof raw.pricing === 'object' ? raw.pricing : null,
+  };
 }
 
 exports.handler = async function (event) {
@@ -116,17 +131,35 @@ exports.handler = async function (event) {
 
   try {
     connectLambda(event);
-    // Strong consistency: every read sees the latest write, so a save can
-    // never be built on a stale copy of the data.
-    const store = getStore({ name: 'cassanova', consistency: 'strong' });
-
-    const raw = await store.get(KEY, { type: 'json' });
-    await migrate(store, raw);
-    const main = normalizeMain(raw);
+    const store = getStore('cassanova');
+    const moved = await migrateLegacy(store);
 
     if (event.httpMethod === 'GET') {
-      const [runs, pending] = await Promise.all([readAll(store, RUN_PREFIX), readAll(store, PENDING_PREFIX)]);
-      return json(200, { stations: main.stations, pricing: main.pricing, runs: runs.map(cleanRun), pending: pending.map(cleanPending) });
+      const [stationList, pricing, runs, pending] = await Promise.all([
+        Promise.all(STATION_IDS.map(id => store.get(STATION_PREFIX + id, { type: 'json' }))),
+        store.get(PRICING_KEY, { type: 'json' }),
+        readPrefix(store, RUN_PREFIX),
+        readPrefix(store, PENDING_PREFIX),
+      ]);
+      const stations = {};
+      STATION_IDS.forEach((id, i) => {
+        stations[id] = cleanStation(stationList[i] || (moved && moved.stations[id]));
+      });
+      // Include anything just moved from the old layout, in case the new keys aren't readable yet.
+      const runMap = new Map(runs.map(cleanRun).map(r => [r.id, r]));
+      if (moved) moved.runs.forEach(r => { if (!runMap.has(r.id)) runMap.set(r.id, r); });
+      const pendMap = new Map(pending.map(cleanPending).map(x => [x.id, x]));
+      if (moved) moved.pending.forEach(x => { if (!pendMap.has(x.id)) pendMap.set(x.id, x); });
+      // A batch that has a rated run is no longer waiting; clear any leftover copy.
+      const leftovers = pending.map(x => safeId(x.id)).filter(id => runMap.has(id));
+      if (leftovers.length) await Promise.all(leftovers.map(id => store.delete(PENDING_PREFIX + id)));
+      for (const id of runMap.keys()) pendMap.delete(id);
+      return json(200, {
+        stations,
+        pricing: (pricing && typeof pricing === 'object') ? pricing : ((moved && moved.pricing) || {}),
+        runs: [...runMap.values()],
+        pending: [...pendMap.values()],
+      });
     }
 
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
@@ -137,14 +170,12 @@ exports.handler = async function (event) {
     switch (body.op) {
       case 'station':
         if (!STATION_IDS.includes(body.id) || !body.station) return json(400, { error: 'Unknown station' });
-        main.stations[body.id] = cleanStation(body.station);
-        await store.setJSON(KEY, main);
+        await store.setJSON(STATION_PREFIX + body.id, cleanStation(body.station));
         break;
 
       case 'pricing':
         if (!body.pricing || typeof body.pricing !== 'object') return json(400, { error: 'Pricing settings missing' });
-        main.pricing = body.pricing;
-        await store.setJSON(KEY, main);
+        await store.setJSON(PRICING_KEY, body.pricing);
         break;
 
       case 'run': {
@@ -162,9 +193,10 @@ exports.handler = async function (event) {
       case 'collect': {
         if (!STATION_IDS.includes(body.id) || !body.pending || !safeId(body.pending.id)) return json(400, { error: 'Unknown station or batch' });
         const p = cleanPending(body.pending);
-        await store.setJSON(PENDING_PREFIX + p.id, p);          // save the batch first
-        main.stations[body.id] = Object.assign(main.stations[body.id], { brewing: false, startedAt: null });
-        await store.setJSON(KEY, main);                          // then free the station
+        await store.setJSON(PENDING_PREFIX + p.id, p);                    // save the batch first
+        const st = cleanStation(body.station || { slots: p.slots });
+        st.brewing = false; st.startedAt = null;
+        await store.setJSON(STATION_PREFIX + body.id, st);                 // then free the station
         break;
       }
 
@@ -172,11 +204,11 @@ exports.handler = async function (event) {
         const tier = Math.round(Number(body.tier));
         const id = safeId(body.id);
         if (!id || !(tier >= 1 && tier <= 5)) return json(400, { error: 'Pick a result tier from 1 to 5' });
-        const p = await store.get(PENDING_PREFIX + id, { type: 'json' });
-        if (p) {
-          await store.setJSON(RUN_PREFIX + id, cleanRun(Object.assign({}, p, { tier })));  // write the run first
-          await store.delete(PENDING_PREFIX + id);                                          // then clear the pending copy
-        }
+        // The page sends the batch it is rating, so this never depends on a fresh read.
+        const p = body.pending && safeId(body.pending.id) === id ? body.pending : await store.get(PENDING_PREFIX + id, { type: 'json' });
+        if (!p) return json(404, { error: 'That batch was not found' });
+        await store.setJSON(RUN_PREFIX + id, cleanRun(Object.assign({}, p, { id, tier })));  // write the run first
+        await store.delete(PENDING_PREFIX + id);                                             // then clear the pending copy
         break;
       }
 
@@ -190,17 +222,16 @@ exports.handler = async function (event) {
         const runs = Array.isArray(body.runs) ? body.runs : [];
         const pending = Array.isArray(body.pending) ? body.pending : [];
         if (runs.length + pending.length > 5000) return json(400, { error: 'Backup is too large to import in one go' });
+        const have = new Set((await store.list({ prefix: RUN_PREFIX })).blobs.map(b => b.key));
+        const havePending = new Set((await store.list({ prefix: PENDING_PREFIX })).blobs.map(b => b.key));
         let added = 0;
         for (const r of runs) {
           const c = cleanRun(r || {});
-          if (!c.id) continue;
-          if (!(await store.get(RUN_PREFIX + c.id, { type: 'json' }))) { await store.setJSON(RUN_PREFIX + c.id, c); added++; }
+          if (c.id && !have.has(RUN_PREFIX + c.id)) { await store.setJSON(RUN_PREFIX + c.id, c); added++; }
         }
         for (const x of pending) {
           const c = cleanPending(x || {});
-          if (!c.id) continue;
-          const asRun = await store.get(RUN_PREFIX + c.id, { type: 'json' });
-          if (!asRun && !(await store.get(PENDING_PREFIX + c.id, { type: 'json' }))) { await store.setJSON(PENDING_PREFIX + c.id, c); added++; }
+          if (c.id && !have.has(RUN_PREFIX + c.id) && !havePending.has(PENDING_PREFIX + c.id)) { await store.setJSON(PENDING_PREFIX + c.id, c); added++; }
         }
         return json(200, { ok: true, added });
       }
