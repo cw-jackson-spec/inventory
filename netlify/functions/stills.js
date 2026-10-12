@@ -34,6 +34,9 @@ const PENDING_PREFIX = 'stills-pending/';
 const STATION_IDS = ['s1', 's2', 's3', 's4', 's5'];
 const INGREDIENTS = ['water', 'apple', 'corn', 'bread', 'barley'];
 const LEGACY_ORDER = ['apple', 'corn', 'bread', 'barley', 'water']; // pre-slot formulas
+// Result levels 1-7: Below Average, Average, Above Average, Good, Great, Excellent, Legendary.
+// Runs saved under the old 5-level scale keep their numbers (old 4 = Good, old 5 = Great).
+const MAX_TIER = 7;
 
 function isAuthorized(event) {
   const pin = event.headers['x-owner-pin'] || event.headers['X-Owner-Pin'];
@@ -81,7 +84,7 @@ function cleanRun(r) {
     id: safeId(r.id),
     station: String(r.station || '').slice(0, 10),
     slots: Array.isArray(r.slots) ? cleanSlots(r.slots, true) : legacySlots(r.formula, r.gauges),
-    tier: clampInt(r.tier, 1, 5, 1),
+    tier: clampInt(r.tier, 1, MAX_TIER, 1),
     at: Number(r.at) || Date.now(),
   };
 }
@@ -180,7 +183,7 @@ exports.handler = async function (event) {
 
       case 'run': {
         const r = cleanRun(body.run || {});
-        if (!r.id || !(Number(body.run && body.run.tier) >= 1)) return json(400, { error: 'A run needs an id and a result tier from 1 to 5' });
+        if (!r.id || !(Number(body.run && body.run.tier) >= 1)) return json(400, { error: 'A run needs an id and a result level from 1 to 7' });
         await store.setJSON(RUN_PREFIX + r.id, r);
         break;
       }
@@ -203,7 +206,7 @@ exports.handler = async function (event) {
       case 'rate': {
         const tier = Math.round(Number(body.tier));
         const id = safeId(body.id);
-        if (!id || !(tier >= 1 && tier <= 5)) return json(400, { error: 'Pick a result tier from 1 to 5' });
+        if (!id || !(tier >= 1 && tier <= MAX_TIER)) return json(400, { error: 'Pick a result level from 1 to 7' });
         // The page sends the batch it is rating, so this never depends on a fresh read.
         const p = body.pending && safeId(body.pending.id) === id ? body.pending : await store.get(PENDING_PREFIX + id, { type: 'json' });
         if (!p) return json(404, { error: 'That batch was not found' });
