@@ -198,7 +198,7 @@
   ::selection{background:var(--amber);color:var(--bg);}
 
   /* ---------- Pricing + Still Log (owner tabs) ---------- */
-  :root{ --t1:#8a8576; --t2:#7f97b3; --t3:#4f9c82; --t4:#6f8ff0; --t5:#e7b84a; --t5-bg:rgba(231,184,74,0.10); }
+  :root{ --t1:#8a8576; --t2:#9aa8b8; --t3:#4f9c82; --t4:#7cb342; --t5:#5b8def; --t6:#a77bf3; --t7:#e7b84a; --t7-bg:rgba(231,184,74,0.10); }
   .x-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);margin-bottom:18px;}
   .x-grid .cell{background:var(--panel);padding:12px 14px;min-width:0;}
   .x-grid .label{font-family:'Barlow Condensed',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--text-faint);margin-bottom:6px;}
@@ -222,7 +222,7 @@
   .slider-row span{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;}
   .tier-tag{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
   .tier-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none;}
-  .tier-1{background:var(--t1);} .tier-2{background:var(--t2);} .tier-3{background:var(--t3);} .tier-4{background:var(--t4);} .tier-5{background:var(--t5);}
+  .tier-1{background:var(--t1);} .tier-2{background:var(--t2);} .tier-3{background:var(--t3);} .tier-4{background:var(--t4);} .tier-5{background:var(--t5);} .tier-6{background:var(--t6);} .tier-7{background:var(--t7);}
   .stations{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:26px;}
   .station{background:var(--panel);border:1px solid var(--border);padding:14px;display:flex;flex-direction:column;gap:9px;min-width:0;}
   .station.brewing{border-color:var(--profit);box-shadow:inset 0 2px 0 var(--profit);}
@@ -242,8 +242,8 @@
   .res-grid{display:grid;grid-template-columns:1fr;gap:5px;}
   .res-btn{display:flex;align-items:center;gap:6px;padding:7px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-size:13px;letter-spacing:.5px;text-transform:uppercase;text-align:left;}
   .res-btn:hover{border-color:var(--amber);}
-  .res-btn.t5{border-color:var(--t5);background:var(--t5-bg);}
-  tr.legend-row td{background:var(--t5-bg) !important;}
+  .res-btn.t7{border-color:var(--t7);background:var(--t7-bg);}
+  tr.legend-row td{background:var(--t7-bg) !important;}
   :root{ --g1:#ffcc00; --g2:#19f0c8; --g3:#14bff5; --g4:#b400ff; --g5:#ff7ae6; }
   .gauge-head{display:flex;justify-content:space-between;font-size:12px;color:var(--text-dim);margin-top:2px;}
   .gauge-row{display:grid;grid-template-columns:1fr 34px;align-items:center;gap:8px;}
@@ -263,10 +263,10 @@
   .weight-bar{height:6px;background:var(--bg);border:1px solid var(--border);}
   .weight-bar span{display:block;height:100%;background:var(--profit);}
   .barrel{display:inline-flex;flex-wrap:wrap;gap:4px 6px;}
-  .lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:26px;align-items:start;}
+  .lanes{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:26px;align-items:start;}
   .lane{background:var(--panel);border:1px solid var(--border);min-width:0;}
   .lane-head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border);font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;font-size:14px;}
-  .lane.t5{border-color:var(--t5);background:var(--t5-bg);}
+  .lane.t7{border-color:var(--t7);background:var(--t7-bg);}
   .lane-body{display:flex;flex-direction:column;gap:8px;padding:10px;}
   .lane-empty{color:var(--text-faint);font-size:11px;text-align:center;padding:8px 0;}
   .rcard{border:1px solid var(--border-soft);background:var(--bg);padding:8px;display:flex;flex-direction:column;gap:6px;}
@@ -1660,7 +1660,10 @@ const STATION_IDS = ['s1','s2','s3','s4','s5'];
 const MOON_INGS = [['water','Water',0.5,'Water'],['apple','Moldy Apple',0.1,'Apple'],['corn','Moldy Corn',0.1,'Corn'],['bread','Moldy Bread',0.1,'Bread'],['barley','Moldy Barley',0.1,'Barley']];
 const ING = Object.fromEntries(MOON_INGS.map(([k,name,kg,short]) => [k, {name, kg, short}]));
 const BARREL_KG = 50;
-const TIER_NAMES = {1:'Below Average',2:'Average',3:'Above Average',4:'Excellent',5:'Legendary'};
+// Result levels, stored as numbers. Runs saved before 2026-10-12 used a 5-level scale whose
+// 4 ("Excellent") and 5 ("Legendary") are the same numbers as Good and Great here, so no data changes.
+const TIER_NAMES = {1:'Below Average',2:'Average',3:'Above Average',4:'Good',5:'Great',6:'Excellent',7:'Legendary'};
+const TIERS_UP = [1,2,3,4,5,6,7], TIERS_DOWN = [7,6,5,4,3,2,1], TOP_TIER = 7;
 // Slot N in the barrel pairs with gauge slider N (yellow, teal, blue, purple, pink), 0-100.
 const SLOT_COLORS = ['g1','g2','g3','g4','g5'];
 const emptySlots = () => [0,1,2,3,4].map(() => ({ ing:'', qty:0, gauge:50 }));
@@ -1990,7 +1993,7 @@ function renderStill(){
     const actions = s.brewing
       ? `<button type="button" class="btn primary" onclick="collectBatch('${id}')">Collected · rate later</button>
          <div class="ing-row"><label>Already know the level?</label></div>
-         <div class="res-grid">${[1,2,3,4,5].map(t => `<button type="button" class="res-btn t${t}" onclick="logRun('${id}',${t})"><span class="tier-dot tier-${t}"></span>${TIER_NAMES[t]}</button>`).join('')}</div>
+         <div class="res-grid">${TIERS_UP.map(t => `<button type="button" class="res-btn t${t}" onclick="logRun('${id}',${t})"><span class="tier-dot tier-${t}"></span>${TIER_NAMES[t]}</button>`).join('')}</div>
          <button type="button" class="btn ghost small" onclick="cancelBatch('${id}')">Cancel batch</button>`
       : `<button type="button" class="btn primary" onclick="startBatch('${id}')" ${filled && !over ? '' : 'disabled'}>Start batch</button>`;
     return `<div class="station ${s.brewing?'brewing':''}">
@@ -2007,13 +2010,13 @@ function renderStill(){
   document.getElementById('pendingBody').innerHTML = pend.length
     ? pend.map(p => `<tr><td>${new Date(p.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</td><td>Station ${escapeHtml(p.station)}</td>
         <td>${barrelChips(p.slots)}</td>
-        <td><div class="rate-row">${[1,2,3,4,5].map(t => `<button type="button" class="res-btn t${t}" title="${TIER_NAMES[t]}" onclick="ratePending('${escapeHtml(p.id)}',${t})"><span class="tier-dot tier-${t}"></span>${TIER_NAMES[t]}</button>`).join('')}</div></td>
+        <td><div class="rate-row">${TIERS_UP.map(t => `<button type="button" class="res-btn t${t}" title="${TIER_NAMES[t]}" onclick="ratePending('${escapeHtml(p.id)}',${t})"><span class="tier-dot tier-${t}"></span>${TIER_NAMES[t]}</button>`).join('')}</div></td>
         <td><button class="btn small danger" title="Discard without a result" onclick="discardPending('${escapeHtml(p.id)}')">✕</button></td></tr>`).join('')
     : `<tr><td colspan="5" style="color:var(--text-faint);text-align:center;padding:16px;">Nothing waiting. On a brewing station, tap "Collected · rate later" to park a batch here and free the station.</td></tr>`;
 
-  document.getElementById('boardLanes').innerHTML = [5,4,3,2,1].map(t => {
+  document.getElementById('boardLanes').innerHTML = TIERS_DOWN.map(t => {
     const inLane = recs.filter(r => r.best === t);
-    return `<div class="lane ${t===5?'t5':''}"><div class="lane-head">${tierTag(t)}<span style="color:var(--text-faint);font-size:12px;">${inLane.length}</span></div>
+    return `<div class="lane ${t===TOP_TIER?'t7':''}"><div class="lane-head">${tierTag(t)}<span style="color:var(--text-faint);font-size:12px;">${inLane.length}</span></div>
       <div class="lane-body">${inLane.length ? inLane.map(r => `<div class="rcard">${barrelChips(r.slots)}
         <div class="rcard-meta"><span>${kgText(barrelKg(r.slots))} · ${r.runs} run${r.runs===1?'':'s'}</span>
         <span>${Object.keys(r.seen).sort((a,b)=>b-a).map(x => `<span class="tier-tag" title="${TIER_NAMES[x]}: ${r.seen[x]}"><span class="tier-dot tier-${x}"></span>${r.seen[x]}</span>`).join(' ')}</span></div></div>`).join('')
