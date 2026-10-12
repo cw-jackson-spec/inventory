@@ -291,6 +291,22 @@
   .rec-why ul{margin:4px 0 0;padding-left:16px;}
   .rec-load{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:11px;color:var(--text-faint);margin-top:auto;}
   .rec-load .btn{padding:4px 9px;min-width:28px;}
+  .hunt-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:12px;margin-bottom:14px;}
+  @media(max-width:760px){ .hunt-top{grid-template-columns:minmax(0,1fr);} }
+  .hunt-box{background:var(--bg);border:1px solid var(--border);padding:12px;min-width:0;display:flex;flex-direction:column;gap:8px;}
+  .hunt-box .barrel{flex-direction:column;align-items:flex-start;}
+  .hunt-h{font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;font-size:13px;color:var(--amber);display:flex;justify-content:space-between;gap:8px;}
+  .hunt-h span{color:var(--text-faint);font-weight:500;}
+  .knobmap{width:100%;border-collapse:collapse;margin:0;font-size:12px;}
+  .knobmap th{font-family:'Barlow Condensed',sans-serif;font-size:11px;letter-spacing:1px;color:var(--text-faint);padding:4px;text-align:center;border-bottom:1px solid var(--border);}
+  .knobmap th:first-child{text-align:left;}
+  .knobmap td{padding:3px;text-align:center;background:transparent !important;}
+  .knobmap td:first-child{text-align:left;white-space:nowrap;padding-right:8px;}
+  .knobmap tbody tr{background:transparent !important;border-bottom:none;}
+  .kcell{display:flex;align-items:center;justify-content:center;gap:4px;min-height:26px;border:1px solid var(--border-soft);font-variant-numeric:tabular-nums;width:100%;background:var(--panel);color:var(--text-dim);font-family:'Space Mono',monospace;font-size:11px;padding:2px;}
+  button.kcell{cursor:pointer;} button.kcell:hover{border-color:var(--amber);color:var(--text);}
+  .kcell.current{border-color:var(--amber);color:var(--amber);}
+  .kcell.tested{color:var(--text);}
   .insights{margin-top:18px;border-top:1px dashed var(--border-soft);padding-top:12px;}
   .insights ul{margin:6px 0 0;padding-left:18px;font-size:12px;color:var(--text-dim);line-height:1.8;}
   .up{color:var(--profit);} .down{color:var(--loss);}
@@ -2148,7 +2164,11 @@ function discardPending(pid){
 // level plus how unsure it is; candidates are ranked by the chance of beating the current best.
 // Everything is recomputed from the run history, so picks sharpen as more batches are rated.
 const Advisor = (() => {
-  const OPT = Object.assign({ kappa: 0.5, kappaExplore: 1.2, exploreFloor: 0.5, priorScale: 1, walks: 200, steps: 3, bases: 4 }, (typeof globalThis !== 'undefined' && globalThis.ADVISOR_OPTS) || {});
+  // hunt: once a recipe reaches Excellent, stop chasing Excellent and search tightly around it for Legendary.
+  // knobBonus / changeCost: a small nudge toward gauge-only and fewer changes (the "Legendary is a knob turn
+  // away" tip); kept small so the data still decides.
+  const OPT = Object.assign({ kappa: 0.5, kappaExplore: 1.2, exploreFloor: 0.5, priorScale: 1, walks: 200, steps: 3, bases: 4,
+    hunt: true, huntFrom: 6, knobBonus: 0.03, changeCost: 0.02, nearMax: 2 }, (typeof globalThis !== 'undefined' && globalThis.ADVISOR_OPTS) || {});
   const INGS = MOON_INGS.map(x => x[0]);
   const NOTCHES = [0, 25, 50, 75, 100];
   // Still rules: all 5 ingredients, one per slot, each 2 to 8 units.
@@ -2309,6 +2329,9 @@ const Advisor = (() => {
     }
     return out;
   }
+  // What kind of change a list of differences is: knob (gauge only), amount, order (slot swap), or mixed.
+  const kindOf = ch => ch.every(t => /gauge/.test(t)) ? 'knob' : ch.every(t => /amount/.test(t)) ? 'amount'
+    : ch.every(t => /^Slot \d+: /.test(t)) ? 'order' : 'mixed';
   const distance = (a, b) => {
     const x = compact(a), y = compact(b); let d = 0;
     for(let i = 0; i < 5; i++){ if(x[i].ing !== y[i].ing) d += 2; else if(live(x[i])){ if(x[i].qty !== y[i].qty) d++; if(x[i].gauge !== y[i].gauge) d++; } }
@@ -2372,23 +2395,71 @@ const Advisor = (() => {
     // Pick a varied set: best chance, highest prediction, then alternates and explorers.
     const picks = [];
     const far = (c, d) => picks.every(p => distance(p.slots, c.slots) >= d);
-    const choose = (role, list, score) => {
-      for(const need of [3, 2, 1]){
+    const choose = (role, list, score, needs) => {
+      for(const need of (needs || [3, 2, 1])){
         const pick = list.filter(c => !picks.includes(c) && far(c, need)).sort((a, b) => score(b) - score(a))[0];
-        if(pick){ picks.push(Object.assign(pick, { role })); return; }
+        if(pick){ picks.push(Object.assign(pick, { role: typeof role === 'function' ? role(pick) : role })); return pick; }
       }
+      return null;
     };
-    const K = OPT.kappa, KX = OPT.kappaExplore;
-    const ucb = c => c.mu + K * c.sd;
-    choose('Best bet', cands, ucb);
-    choose('Highest predicted', cands, c => c.mu);
-    choose('Strong alternative', cands, ucb);
-    const promising = cands.filter(c => c.mu >= best - OPT.exploreFloor);
-    choose('Explore', promising.length ? promising : cands, c => c.mu + KX * c.sd);
-    choose('Alternative', cands, c => c.mu);
+
+    // ---- Legendary hunt: you already make Excellent, so only Legendary counts now ----
+    const anchors = OPT.hunt && best >= OPT.huntFrom ? tried.filter(g => g.best >= OPT.huntFrom)
+      .map(g => Object.assign({}, g, { slots: valid(g.slots) ? g.slots : complete(g.slots), hits: g.tiers.filter(t => t >= OPT.huntFrom).length }))
+      .sort((a, b) => b.hits - a.hits || (b.hits / b.tiers.length) - (a.hits / a.tiers.length) || b.avg - a.avg || b.pred - a.pred)
+      .slice(0, 3) : [];
+    if(anchors.length){
+      const legendTarget = TOP_TIER - 0.5;
+      const ROLE = { knob: 'Knob tweak', amount: 'Amount tweak', order: 'Order swap', mixed: 'Mixed tweak' };
+      // Candidates are single moves (one gauge notch setting, one amount change, or one slot swap)
+      // and pairs of moves away from an Excellent recipe. "moves" counts the steps, so a swap is one move.
+      const near = [], nearSeen = new Set();
+      const consider = (slots, anchor, moves) => {
+        const k = key(slots);
+        if(nearSeen.has(k) || skip.has(k) || !valid(slots) || kg(slots) > BARREL_KG) return;
+        nearSeen.add(k);
+        const ch = changes(anchor.slots, slots);
+        if(!ch.length) return;
+        const p = model.predict(slots);
+        near.push({ slots, key: k, mu: p.mu, sd: p.sd, sdTot: p.sdTot, chance: 1 - cdf((legendTarget - p.mu) / p.sdTot), anchor, moves, kind: kindOf(ch) });
+      };
+      anchors.forEach((a, ai) => {
+        const n1 = neighbors(a.slots, qMax).filter(valid);
+        n1.forEach(c => consider(c, a, 1));
+        n1.filter(() => ai === 0 || r() < 0.35).forEach(c1 => neighbors(c1, qMax).forEach(c2 => consider(c2, a, 2)));
+      });
+      // Search in stages: single knob turns first (the tip), then single amount/order changes, then pairs.
+      // Inside each stage the model orders the options, so the data decides what to try first.
+      const stage = c => c.moves === 1 && c.kind === 'knob' ? 1 : c.moves === 1 ? 2 : 3;
+      const byStage = c => -stage(c) * 10 + c.chance + 1e-3 * c.mu;
+      const hs = c => c.chance + (c.kind === 'knob' ? OPT.knobBonus : 0) - OPT.changeCost * (c.moves - 1) + 1e-3 * c.mu;
+      const singlesLeft = near.filter(c => stage(c) === 1);
+      const otherSingles = near.filter(c => stage(c) === 2);
+      choose('Best shot at Legendary', near, hs, [1]);                        // the model's top pick, any stage
+      const knobs = Math.max(1, count - 3);
+      for(let i = 0; i < knobs; i++) choose(c => ROLE[c.kind], singlesLeft.length ? singlesLeft : near, byStage, [2, 1]);
+      choose(c => ROLE[c.kind], otherSingles.length ? otherSingles : near, byStage, [2, 1]);  // don't rely only on knobs
+      // One wider pick, in case Legendary needs more than a small tweak.
+      const minCh = c => Math.min(...anchors.map(a => changes(a.slots, c.slots).length));
+      const wide = cands.map(c => Object.assign(c, { chance: 1 - cdf((legendTarget - c.mu) / c.sdTot) })).filter(c => minCh(c) > OPT.nearMax);
+      choose('Wider search', wide, c => c.chance + 1e-3 * c.mu, [1]);
+      while(picks.length < count && choose(c => ROLE[c.kind] || 'Alternative', near.concat(wide), byStage, [1]));
+      picks.forEach(p => { if(p.anchor){ p.from = { tier: p.anchor.best, slots: p.anchor.slots }; p.changes = changes(p.anchor.slots, p.slots); p.kg = kg(p.slots); } });
+    }
+    const hunt = anchors.length > 0;
+    if(!hunt){
+      const K = OPT.kappa, KX = OPT.kappaExplore;
+      const ucb = c => c.mu + K * c.sd;
+      choose('Best bet', cands, ucb);
+      choose('Highest predicted', cands, c => c.mu);
+      choose('Strong alternative', cands, ucb);
+      const promising = cands.filter(c => c.mu >= best - OPT.exploreFloor);
+      choose('Explore', promising.length ? promising : cands, c => c.mu + KX * c.sd);
+      choose('Alternative', cands, c => c.mu);
+    }
     picks.splice(count);
 
-    picks.forEach(p => {
+    picks.filter(p => !p.from).forEach(p => {
       const near = tried.slice().sort((a, b) => distance(a.slots, p.slots) - distance(b.slots, p.slots) || b.best - a.best)[0];
       p.from = { tier: near.best, slots: near.slots };
       p.changes = changes(near.slots, p.slots);
@@ -2396,7 +2467,7 @@ const Advisor = (() => {
     });
 
     // What the model is confident about, measured as single changes to the best recipe.
-    const base = tried.filter(g => g.best === best).sort((a, b) => b.pred - a.pred)[0];
+    const base = hunt ? anchors[0] : tried.filter(g => g.best === best).sort((a, b) => b.pred - a.pred)[0];
     const insights = [];
     const bs = valid(base.slots) ? base.slots : complete(base.slots), bf = bs.filter(live);
     const tryMove = (slots, text) => {
@@ -2413,7 +2484,26 @@ const Advisor = (() => {
     if(bf.length < 5) INGS.forEach(ing => { if(!bf.some(x => x.ing === ing)){ const c = clone(bs); c[bf.length] = { ing, qty: QMIN, gauge: 50 }; tryMove(c, `Add ${nameOf(ing)} (×${QMIN} @50)`); } });
     insights.sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
 
-    return { status: 'ok', n: model.n, skipped, sigma: model.sigma, best, goal, picks, insights: insights.slice(0, 5), base: base.slots };
+    // Hunt extras: the recipe to mass-produce, and a map of every one-knob change around it.
+    let production = null, knobMap = null;
+    if(hunt){
+      const a = anchors[0];
+      const st = { knob: [0, 0], other: [0, 0] };   // [tested, total] single moves around the recipe
+      neighbors(a.slots, qMax).filter(valid).forEach(c => {
+        const ch = changes(a.slots, c), kd = kindOf(ch) === 'knob' ? 'knob' : 'other';
+        st[kd][1]++; if(byKey[key(c)]) st[kd][0]++;
+      });
+      production = { slots: a.slots, hits: a.hits, total: a.tiers.length, tier: a.best, coverage: st };
+      knobMap = a.slots.filter(live).map((s, i) => ({ slot: i + 1, ing: s.ing, cells: NOTCHES.map(g => {
+        if(g === s.gauge) return { g, state: 'current', tier: a.best };
+        const c = clone(a.slots); c[i].gauge = g;
+        const t = byKey[key(c)];
+        if(t) return { g, state: 'tested', tier: Math.max(...t.tiers), n: t.tiers.length };
+        const p = model.predict(c);
+        return { g, state: 'untested', chance: 1 - cdf(((TOP_TIER - 0.5) - p.mu) / p.sdTot) };
+      }) }));
+    }
+    return { status: 'ok', mode: hunt ? 'hunt' : 'climb', n: model.n, skipped, sigma: model.sigma, best, goal: hunt ? TOP_TIER : goal, picks, insights: insights.slice(0, 5), base: base.slots, production, knobMap };
   }
 
   return { recommend, compact, key, kg, fit, valid, complete };
@@ -2464,12 +2554,57 @@ function renderAdvisor(){
   const ins = res.insights.length
     ? `<ul>${res.insights.map(x => `<li>${escapeHtml(x.text)}: <span class="${x.d > 0 ? 'up' : 'down'}">likely ${x.d > 0 ? 'raises' : 'lowers'} the result (${x.d > 0 ? '+' : '−'}${Math.abs(x.d).toFixed(1)} level)</span></li>`).join('')}</ul>`
     : `<div class="field-note" style="margin-top:6px;">Not enough variety yet to say for sure what helps. The picks are chosen to find out.</div>`;
+  let huntHtml = '';
+  if(res.mode === 'hunt' && res.production){
+    const pr = res.production, cov = pr.coverage;
+    const loadBtns = idle.length ? 'Load into station ' + idle.map(id => `<button type="button" class="btn small ghost" style="padding:4px 9px;" title="Load into Station ${id.slice(1)}" onclick="loadProduction('${id}')">${id.slice(1)}</button>`).join(' ') : '';
+    const cell = (row, c) => c.state === 'current'
+      ? `<span class="kcell current" title="Your ${TIER_NAMES[pr.tier]} recipe">★ now</span>`
+      : c.state === 'tested'
+        ? `<span class="kcell tested" title="Tested ${c.n}×, best ${TIER_NAMES[c.tier]}"><span class="tier-dot tier-${c.tier}"></span>${({1:'Below',2:'Avg',3:'Above',4:'Good',5:'Great',6:'Exc',7:'Leg'})[c.tier]}</span>`
+        : `<button type="button" class="kcell" title="Untested. ${Math.round(c.chance * 100)}% predicted chance of Legendary. Click to load into the next idle station." onclick="loadKnob(${row.slot - 1},${c.g})">${Math.round(c.chance * 100)}%</button>`;
+    huntHtml = `<div class="hunt-top">
+      <div class="hunt-box"><div class="hunt-h">Production recipe<span>${TIER_NAMES[pr.tier]} in ${pr.hits} of ${pr.total} brew${pr.total===1?'':'s'}</span></div>
+        <div class="field-note" style="margin:0;">Brew this for profit while the hunt runs.</div>
+        ${barrelChips(pr.slots)}
+        <div class="rec-load">${loadBtns}</div>
+        <div class="field-note" style="margin:0;">Single changes tested around it: knob turns ${cov.knob[0]} of ${cov.knob[1]}, amount and order changes ${cov.other[0]} of ${cov.other[1]}.</div></div>
+      <div class="hunt-box"><div class="hunt-h">Knob map<span>one gauge change at a time</span></div>
+        <div class="tbl-scroll"><table class="knobmap"><thead><tr><th>Slot</th>${[0,25,50,75,100].map(g => `<th>${g}</th>`).join('')}</tr></thead>
+        <tbody>${res.knobMap.map(row => `<tr><td><b style="color:var(--${SLOT_COLORS[row.slot-1]})">${row.slot}</b> ${escapeHtml(ING[row.ing].name)}</td>${row.cells.map(c => `<td>${cell(row, c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+        <div class="field-note" style="margin:0;">★ your recipe's setting · dots show tested results · % is the predicted chance of Legendary for untested turns (click to load one).</div></div>
+    </div>`;
+  }
   out.innerHTML = `<div class="advisor-goal"><span>${res.best >= TOP_TIER
       ? `You've hit <b>Legendary</b>. These picks aim to make it repeatable.`
-      : `Best so far: <b>${TIER_NAMES[res.best]}</b>. Aiming for <b>${goalName}</b> and up. Predictions are estimates from your runs and get sharper with every batch you rate.`}</span>
+      : res.mode === 'hunt'
+        ? `<b>Legendary hunt.</b> You already make ${TIER_NAMES[res.best]}, so every pick now aims only at Legendary: single knob turns on your recipe first, then single amount and slot-order changes (one every round), then pairs of changes, plus one wider pick in case it needs more.`
+        : `Best so far: <b>${TIER_NAMES[res.best]}</b>. Aiming for <b>${goalName}</b> and up. Predictions are estimates from your runs and get sharper with every batch you rate.`}</span>
       ${idle.length && res.picks.length ? `<button type="button" class="btn small" onclick="loadAllPicks()">Fill ${Math.min(idle.length, res.picks.length)} idle station${Math.min(idle.length, res.picks.length)===1?'':'s'} with the top picks</button>` : ''}</div>
+    ${huntHtml}
     <div class="rec-grid">${cards}</div>
     <div class="insights"><div class="label" style="font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-faint);">What your runs say about your best recipe</div>${ins}</div>`;
+}
+function loadSlotsInto(slots, stationId, label){
+  const s = stills.stations[stationId];
+  if(!s || s.brewing) return false;
+  s.slots = Advisor.compact(slots).map(x => ({ ing: x.ing, qty: x.qty, gauge: x.gauge == null ? 50 : x.gauge }));
+  renderStill(); saveStation(stationId, true);
+  setStillStatus(`Loaded ${label} into Station ${stationId.slice(1)}`);
+  return true;
+}
+function loadProduction(stationId){
+  const pr = advisorResult && advisorResult.production;
+  if(pr) loadSlotsInto(pr.slots, stationId, 'the production recipe');
+}
+function loadKnob(slotIndex, gauge){
+  const pr = advisorResult && advisorResult.production;
+  const id = STATION_IDS.find(x => !stills.stations[x].brewing && !filledSlots(stills.stations[x].slots).length)
+          || STATION_IDS.find(x => !stills.stations[x].brewing);
+  if(!pr || !id){ setStillStatus('No idle station to load into', true); return; }
+  const slots = Advisor.compact(pr.slots).map(x => Object.assign({}, x));
+  slots[slotIndex].gauge = gauge;
+  loadSlotsInto(slots, id, `slot ${slotIndex + 1} gauge ${gauge}`);
 }
 function loadRecipe(i, stationId){
   const p = advisorResult && advisorResult.picks && advisorResult.picks[i];
