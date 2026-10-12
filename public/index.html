@@ -1689,6 +1689,20 @@ const STATION_IDS = ['s1','s2','s3','s4','s5'];
 const MOON_INGS = [['water','Water',0.5,'Water'],['apple','Moldy Apple',0.1,'Apple'],['corn','Moldy Corn',0.1,'Corn'],['bread','Moldy Bread',0.1,'Bread'],['barley','Moldy Barley',0.1,'Barley']];
 const ING = Object.fromEntries(MOON_INGS.map(([k,name,kg,short]) => [k, {name, kg, short}]));
 const BARREL_KG = 50;
+// Still rules: every barrel uses all 5 ingredients, one slot each, 2 to 8 of each
+// ("Maximum amount of an individual item is 8").
+const MOON_MIN_QTY = 2, MOON_MAX_QTY = 8;
+// What stops a barrel from brewing. Empty list = OK to brew.
+function amountProblems(slots){
+  const used = (slots || []).filter(sl => sl.ing && sl.qty > 0), out = [];
+  const missing = MOON_INGS.filter(([k]) => !used.some(sl => sl.ing === k)).map(([, name]) => name);
+  if(missing.length) out.push('Missing ' + missing.join(', '));
+  const count = {};
+  used.forEach(sl => { count[sl.ing] = (count[sl.ing] || 0) + 1; });
+  Object.entries(count).filter(([, n]) => n > 1).forEach(([ing]) => out.push(`${ING[ing].name} is in more than one slot`));
+  used.filter(sl => sl.qty < MOON_MIN_QTY || sl.qty > MOON_MAX_QTY).forEach(sl => out.push(`${ING[sl.ing].name}: ${sl.qty} (must be ${MOON_MIN_QTY}–${MOON_MAX_QTY})`));
+  return out;
+}
 // Result levels, stored as numbers. Runs saved before 2026-10-12 used a 5-level scale whose
 // 4 ("Excellent") and 5 ("Legendary") are the same numbers as Good and Great here, so no data changes.
 const TIER_NAMES = {1:'Below Average',2:'Average',3:'Above Average',4:'Good',5:'Great',6:'Excellent',7:'Legendary'};
@@ -1989,7 +2003,7 @@ function slotHtml(id, s, i){
     <div class="slot-top">
       <span class="slot-n" style="color:var(--${c});border-color:var(--${c})">${i+1}</span>
       <select id="${id}-ing${i}" aria-label="Slot ${i+1} ingredient" onchange="setSlot('${id}',${i},'ing',this.value)" ${dis}>${opts}</select>
-      <div class="stepper"><button type="button" onclick="bumpSlot('${id}',${i},-1)" aria-label="Less in slot ${i+1}" ${sl.ing?'':'disabled'}>−</button><input type="number" min="0" max="999" id="${id}-qty${i}" aria-label="Slot ${i+1} quantity" value="${sl.qty}" ${s.brewing||!sl.ing?'readonly':''} onchange="setSlot('${id}',${i},'qty',this.value)"><button type="button" onclick="bumpSlot('${id}',${i},1)" aria-label="More in slot ${i+1}" ${sl.ing?'':'disabled'}>+</button></div>
+      <div class="stepper"><button type="button" onclick="bumpSlot('${id}',${i},-1)" aria-label="Less in slot ${i+1}" ${sl.ing && sl.qty > MOON_MIN_QTY ?'':'disabled'}>−</button><input type="number" min="${MOON_MIN_QTY}" max="${MOON_MAX_QTY}" id="${id}-qty${i}" aria-label="Slot ${i+1} quantity" value="${sl.qty}" ${s.brewing||!sl.ing?'readonly':''} onchange="setSlot('${id}',${i},'qty',this.value)"><button type="button" onclick="bumpSlot('${id}',${i},1)" aria-label="More in slot ${i+1}" ${sl.ing && sl.qty < MOON_MAX_QTY ?'':'disabled'}>+</button></div>
     </div>
     <div class="gauge-row"><input type="range" min="0" max="100" step="25" id="${id}-g${i}" aria-label="Slot ${i+1} gauge" value="${sl.gauge}" style="accent-color:var(--${c})" ${dis} oninput="document.getElementById('${id}-g${i}-v').textContent=this.value" onchange="setSlot('${id}',${i},'gauge',this.value)"><span id="${id}-g${i}-v" style="color:var(--${c})">${sl.gauge}</span></div>
     <div class="gauge-ticks" style="margin-right:42px"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
@@ -2016,6 +2030,7 @@ function renderStill(){
     const s = stills.stations[id];
     const filled = filledSlots(s.slots).length;
     const kg = barrelKg(s.slots), over = kg > BARREL_KG;
+    const badAmt = s.brewing ? [] : amountProblems(s.slots);
     const prev = filled ? recMap[moonKey(s.slots)] : null;
     const waiting = filled ? stills.pending.filter(p => moonKey(p.slots) === moonKey(s.slots)).length : 0;
     const tried = (prev || waiting) ? `<div class="tried">${prev ? `Tried ${prev.runs}× before · best ${TIER_NAMES[prev.best]}` : ''}${prev && waiting ? '<br>' : ''}${waiting ? `${waiting} of this recipe awaiting results` : ''}</div>` : '';
@@ -2024,7 +2039,8 @@ function renderStill(){
          <div class="ing-row"><label>Already know the level?</label></div>
          <div class="res-grid">${TIERS_UP.map(t => `<button type="button" class="res-btn t${t}" onclick="logRun('${id}',${t})"><span class="tier-dot tier-${t}"></span>${TIER_NAMES[t]}</button>`).join('')}</div>
          <button type="button" class="btn ghost small" onclick="cancelBatch('${id}')">Cancel batch</button>`
-      : `<button type="button" class="btn primary" onclick="startBatch('${id}')" ${filled && !over ? '' : 'disabled'}>Start batch</button>`;
+      : `${badAmt.length && filled ? `<div class="field-note" style="color:var(--loss)">Every barrel needs all 5 ingredients, ${MOON_MIN_QTY}–${MOON_MAX_QTY} each. ${badAmt.map(escapeHtml).join('; ')}.</div>` : ''}
+         <button type="button" class="btn primary" onclick="startBatch('${id}')" ${filled && !over && !badAmt.length ? '' : 'disabled'}>Start batch</button>`;
     return `<div class="station ${s.brewing?'brewing':''}">
       <div class="station-top"><span class="station-name">Station ${i+1}</span><span class="pill ${s.brewing?'on':''}">${s.brewing?'Brewing':'Idle'}</span></div>
       ${[0,1,2,3,4].map(n => slotHtml(id, s, n)).join('')}
@@ -2074,9 +2090,9 @@ function setSlot(id, i, field, v){
   const sl = Object.assign({}, s.slots[i]);
   if(field === 'ing'){
     sl.ing = MOON_INGS.some(([k]) => k === v) ? v : '';
-    if(!sl.ing) sl.qty = 0; else if(!sl.qty) sl.qty = 1;
+    if(!sl.ing) sl.qty = 0; else sl.qty = Math.max(MOON_MIN_QTY, Math.min(MOON_MAX_QTY, Number(sl.qty) || MOON_MIN_QTY));
   } else if(field === 'qty'){
-    sl.qty = sl.ing ? Math.max(0, Math.min(999, Math.round(Number(v)||0))) : 0;
+    sl.qty = sl.ing ? Math.max(MOON_MIN_QTY, Math.min(MOON_MAX_QTY, Math.round(Number(v)||0))) : 0;
   } else if(field === 'gauge'){
     sl.gauge = Math.round(Math.max(0, Math.min(100, Number(v)||0)) / 25) * 25;
   }
@@ -2085,7 +2101,9 @@ function setSlot(id, i, field, v){
 }
 function bumpSlot(id, i, d){ setSlot(id, i, 'qty', (Number(stills.stations[id].slots[i].qty)||0) + d); }
 function startBatch(id){
-  const s = stills.stations[id]; s.brewing = true; s.startedAt = Date.now();
+  const s = stills.stations[id];
+  if(amountProblems(s.slots).length) return;   // the still won't take it, so don't log it
+  s.brewing = true; s.startedAt = Date.now();
   renderStill(); saveStation(id, true);
 }
 function cancelBatch(id){
@@ -2133,6 +2151,23 @@ const Advisor = (() => {
   const OPT = Object.assign({ kappa: 0.5, kappaExplore: 1.2, exploreFloor: 0.5, priorScale: 1, walks: 200, steps: 3, bases: 4 }, (typeof globalThis !== 'undefined' && globalThis.ADVISOR_OPTS) || {});
   const INGS = MOON_INGS.map(x => x[0]);
   const NOTCHES = [0, 25, 50, 75, 100];
+  // Still rules: all 5 ingredients, one per slot, each 2 to 8 units.
+  const QMIN = MOON_MIN_QTY, QMAX = MOON_MAX_QTY;
+  const valid = slots => {
+    const f = compact(slots).filter(live);
+    return f.length === INGS.length && new Set(f.map(s => s.ing)).size === INGS.length && f.every(s => s.qty >= QMIN && s.qty <= QMAX);
+  };
+  // Turn an older, incomplete recipe into a legal one: keep what it had (in order, amounts
+  // clamped to 2-8), then add the missing ingredients at the minimum amount.
+  function complete(slots, gaugeFor){
+    const out = [], seen = new Set();
+    compact(slots).filter(live).forEach(s => {
+      if(seen.has(s.ing)) return; seen.add(s.ing);
+      out.push({ ing: s.ing, qty: Math.max(QMIN, Math.min(QMAX, s.qty)), gauge: s.gauge == null ? 50 : s.gauge });
+    });
+    INGS.forEach(ing => { if(!seen.has(ing)) out.push({ ing, qty: QMIN, gauge: gaugeFor ? gaugeFor(ing) : 50 }); });
+    return compact(out);
+  }
   const live = s => s && s.ing && Number(s.qty) > 0;
   const blank = () => ({ ing: '', qty: 0, gauge: 50 });
   const nameOf = ing => (ING[ing] || {}).name || ing;
@@ -2236,14 +2271,14 @@ const Advisor = (() => {
     const add = s => out.push(compact(s));
     f.forEach((s, i) => {
       NOTCHES.forEach(g => { if(g !== s.gauge){ const c = clone(base); c[i].gauge = g; add(c); } });
-      [-2, -1, 1, 2].forEach(d => { const q = s.qty + d; if(q >= 1 && q <= qMax){ const c = clone(base); c[i].qty = q; add(c); } });
+      [-2, -1, 1, 2].forEach(d => { const q = s.qty + d; if(q >= QMIN && q <= qMax){ const c = clone(base); c[i].qty = q; add(c); } });
       INGS.forEach(ing => { if(!f.some(x => x.ing === ing)){ const c = clone(base); c[i].ing = ing; add(c); } });
       if(f.length > 1){ const c = clone(base); c.splice(i, 1); add(c); }
     });
     for(let i = 0; i < f.length; i++) for(let j = i + 1; j < f.length; j++){ const c = clone(base); [c[i], c[j]] = [c[j], c[i]]; add(c); }
     if(f.length < 5) INGS.forEach(ing => {
       if(f.some(x => x.ing === ing)) return;
-      [1, 2, 3].forEach(q => NOTCHES.forEach(g => { const c = clone(base); c[f.length] = { ing, qty: q, gauge: g }; add(c); }));
+      [QMIN, QMIN + 2, QMIN + 4].forEach(q => NOTCHES.forEach(g => { const c = clone(base); c[f.length] = { ing, qty: q, gauge: g }; add(c); }));
     });
     return out;
   }
@@ -2252,10 +2287,10 @@ const Advisor = (() => {
   function hash(str){ let h = 2166136261; for(let i = 0; i < str.length; i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 
   function randomRecipe(r, qMax){
-    const pool = INGS.slice(), n = 1 + Math.floor(r() * 5), c = [];
+    const pool = INGS.slice(), n = INGS.length, c = [];
     for(let i = 0; i < n && pool.length; i++){
       const ing = pool.splice(Math.floor(r() * pool.length), 1)[0];
-      c.push({ ing, qty: 1 + Math.floor(r() * qMax), gauge: NOTCHES[Math.floor(r() * 5)] });
+      c.push({ ing, qty: QMIN + Math.floor(r() * (qMax - QMIN + 1)), gauge: NOTCHES[Math.floor(r() * 5)] });
     }
     return compact(c);
   }
@@ -2305,7 +2340,7 @@ const Advisor = (() => {
     const target = goal - 0.5;
     const skip = new Set(Object.keys(byKey).concat((busy || []).map(key)));
 
-    const qMax = Math.max(6, ...model.used.flatMap(r => compact(r.slots).filter(live).map(s => s.qty))) + 2;
+    const qMax = QMAX;
     const r = rng(hash(seedText || ''));
     const bases = tried.slice().sort((a, b) => b.best - a.best || b.avg - a.avg || b.pred - a.pred).slice(0, OPT.bases);
     const topPred = tried.slice().sort((a, b) => b.pred - a.pred)[0];
@@ -2313,7 +2348,9 @@ const Advisor = (() => {
 
     const pool = [];
     bases.forEach(bz => {
-      const ns = neighbors(bz.slots, qMax);
+      const start = valid(bz.slots) ? [bz.slots] : [complete(bz.slots), complete(bz.slots, () => NOTCHES[Math.floor(r() * 5)])];
+      start.forEach(st => { if(!valid(bz.slots)) pool.push(st); });
+      const ns = [].concat(...start.map(st => neighbors(st, qMax)));
       pool.push(...ns);
       for(let i = 0; i < OPT.walks && ns.length; i++){
         let cur = ns[Math.floor(r() * ns.length)];
@@ -2326,7 +2363,7 @@ const Advisor = (() => {
     pool.forEach(slots => {
       const k = key(slots);
       if(seen.has(k) || skip.has(k)) return; seen.add(k);
-      if(!slots.some(live) || kg(slots) > BARREL_KG) return;
+      if(!valid(slots) || kg(slots) > BARREL_KG) return;
       const p = model.predict(slots);
       cands.push({ slots, key: k, mu: p.mu, sd: p.sd, sdTot: p.sdTot, chance: 1 - cdf((target - p.mu) / p.sdTot) });
     });
@@ -2361,25 +2398,25 @@ const Advisor = (() => {
     // What the model is confident about, measured as single changes to the best recipe.
     const base = tried.filter(g => g.best === best).sort((a, b) => b.pred - a.pred)[0];
     const insights = [];
-    const bs = base.slots, bf = bs.filter(live);
+    const bs = valid(base.slots) ? base.slots : complete(base.slots), bf = bs.filter(live);
     const tryMove = (slots, text) => {
-      if(!slots.some(live) || kg(slots) > BARREL_KG) return;
+      if(!valid(slots) || kg(slots) > BARREL_KG) return;
       const d = model.delta(bs, slots);
       if(d.sd > 0 && Math.abs(d.d) >= 0.15 && Math.abs(d.d) / d.sd >= 1.2) insights.push({ text, d: d.d, z: d.d / d.sd });
     };
     bf.forEach((s, i) => {
       [-25, 25].forEach(dg => { const g = s.gauge + dg; if(g >= 0 && g <= 100){ const c = clone(bs); c[i].gauge = g; tryMove(c, `Slot ${i + 1} ${nameOf(s.ing)} gauge ${s.gauge} → ${g}`); } });
-      [-1, 1].forEach(dq => { const q = s.qty + dq; if(q >= 1){ const c = clone(bs); c[i].qty = q; tryMove(c, `Slot ${i + 1} ${nameOf(s.ing)} amount ${s.qty} → ${q}`); } });
+      [-1, 1].forEach(dq => { const q = s.qty + dq; if(q >= QMIN && q <= QMAX){ const c = clone(bs); c[i].qty = q; tryMove(c, `Slot ${i + 1} ${nameOf(s.ing)} amount ${s.qty} → ${q}`); } });
       if(bf.length > 1){ const c = clone(bs); c.splice(i, 1); tryMove(compact(c), `Leave out ${nameOf(s.ing)}`); }
       if(i < bf.length - 1){ const c = clone(bs); [c[i], c[i + 1]] = [c[i + 1], c[i]]; tryMove(c, `Swap slots ${i + 1} and ${i + 2} (${nameOf(s.ing)} ↔ ${nameOf(bf[i + 1].ing)})`); }
     });
-    if(bf.length < 5) INGS.forEach(ing => { if(!bf.some(x => x.ing === ing)){ const c = clone(bs); c[bf.length] = { ing, qty: 1, gauge: 50 }; tryMove(c, `Add ${nameOf(ing)} (×1 @50)`); } });
+    if(bf.length < 5) INGS.forEach(ing => { if(!bf.some(x => x.ing === ing)){ const c = clone(bs); c[bf.length] = { ing, qty: QMIN, gauge: 50 }; tryMove(c, `Add ${nameOf(ing)} (×${QMIN} @50)`); } });
     insights.sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
 
     return { status: 'ok', n: model.n, skipped, sigma: model.sigma, best, goal, picks, insights: insights.slice(0, 5), base: base.slots };
   }
 
-  return { recommend, compact, key, kg, fit };
+  return { recommend, compact, key, kg, fit, valid, complete };
 })();
 // ===== Recipe advisor (end) =====
 
