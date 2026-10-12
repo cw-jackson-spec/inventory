@@ -274,6 +274,26 @@
   .rcard-meta{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--text-faint);}
   .rate-row{display:flex;flex-wrap:wrap;gap:4px;}
   .rate-row .res-btn{padding:4px 7px;font-size:12px;}
+  .advisor-head{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;}
+  .advisor-goal{margin:16px 0 12px;font-size:13px;color:var(--text-dim);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+  .advisor-goal b{color:var(--text);}
+  .rec-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;}
+  .rec-card .chip{white-space:normal;}
+  .rec-card{background:var(--bg);border:1px solid var(--border);padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0;}
+  .rec-card.top{border-color:var(--amber);}
+  .rec-role{display:flex;justify-content:space-between;align-items:center;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;font-size:14px;color:var(--amber);}
+  .rec-role span{color:var(--text-faint);font-size:12px;}
+  .rec-card .barrel{flex-direction:column;align-items:flex-start;}
+  .rec-stats{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;font-size:12px;}
+  .rec-stats label{display:block;font-family:'Barlow Condensed',sans-serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-faint);}
+  .rec-stats b{font-weight:700;font-variant-numeric:tabular-nums;}
+  .rec-why{font-size:11px;color:var(--text-dim);border-top:1px dashed var(--border-soft);padding-top:8px;}
+  .rec-why ul{margin:4px 0 0;padding-left:16px;}
+  .rec-load{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:11px;color:var(--text-faint);margin-top:auto;}
+  .rec-load .btn{padding:4px 9px;min-width:28px;}
+  .insights{margin-top:18px;border-top:1px dashed var(--border-soft);padding-top:12px;}
+  .insights ul{margin:6px 0 0;padding-left:18px;font-size:12px;color:var(--text-dim);line-height:1.8;}
+  .up{color:var(--profit);} .down{color:var(--loss);}
   .gauge-ticks{display:flex;justify-content:space-between;font-size:9px;color:var(--text-faint);padding:0 2px;margin-top:-2px;}
   .chip{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid var(--border);font-size:12px;white-space:nowrap;}
   .chip b{font-weight:700;}
@@ -395,6 +415,15 @@
           <input type="file" id="stillsRestoreFile" accept=".json,application/json" hidden onchange="restoreStillsBackup(this)">
         </span>
       </div>
+      <div class="section-title">Recipe advisor <span class="still-status" id="advisorMeta"></span></div>
+      <div class="x-card advisor" style="margin-bottom:26px;">
+        <div class="advisor-head">
+          <div class="field-note" style="margin:0;max-width:640px;">Learns from every rated run which ingredients, amounts, slot order and gauge notches raise the level, then picks untried recipes with the best shot at your next level. Picks update each time you rate a batch.</div>
+          <button type="button" class="btn primary" id="advisorBtn" onclick="toggleAdvisor()">Get recommendations</button>
+        </div>
+        <div id="advisorOut" style="display:none;"></div>
+      </div>
+
       <div class="section-title">Stations <span class="still-status" id="stillStatus"></span></div>
       <div class="stations" id="stations"></div>
 
@@ -2029,6 +2058,7 @@ function renderStill(){
         <td>${barrelChips(r.slots)}</td><td>${tierTag(r.tier)}</td>
         <td><button class="btn small danger" onclick="deleteRun('${escapeHtml(r.id)}')">✕</button></td></tr>`).join('')
     : `<tr><td colspan="5" style="color:var(--text-faint);text-align:center;padding:16px;">Finished batches show up here with their barrel setup and result.</td></tr>`;
+  renderAdvisor();
 }
 
 const stationTimers = {};
@@ -2093,6 +2123,338 @@ function discardPending(pid){
     await saveOp({ op:'discardPending', id: pid });
   });
 }
+// ===== Recipe advisor (start) =====
+// Learns from rated runs which ingredients, amounts, slot order and gauge notches move the
+// result, then searches untried recipes near the best ones for the best shot at the next level.
+// Method: Bayesian linear regression on recipe features. For any recipe it gives a predicted
+// level plus how unsure it is; candidates are ranked by the chance of beating the current best.
+// Everything is recomputed from the run history, so picks sharpen as more batches are rated.
+const Advisor = (() => {
+  const OPT = Object.assign({ kappa: 0.5, kappaExplore: 1.2, exploreFloor: 0.5, priorScale: 1, walks: 200, steps: 3, bases: 4 }, (typeof globalThis !== 'undefined' && globalThis.ADVISOR_OPTS) || {});
+  const INGS = MOON_INGS.map(x => x[0]);
+  const NOTCHES = [0, 25, 50, 75, 100];
+  const live = s => s && s.ing && Number(s.qty) > 0;
+  const blank = () => ({ ing: '', qty: 0, gauge: 50 });
+  const nameOf = ing => (ING[ing] || {}).name || ing;
+
+  function compact(slots){
+    const f = (slots || []).filter(live).map(s => ({ ing: s.ing, qty: Math.round(Number(s.qty)), gauge: s.gauge == null ? null : Number(s.gauge) }));
+    while(f.length < 5) f.push(blank());
+    return f.slice(0, 5);
+  }
+  const key = slots => compact(slots).map(s => live(s) ? `${s.ing}:${s.qty}@${s.gauge}` : '-').join('|');
+  const kg = slots => compact(slots).filter(live).reduce((t, s) => t + s.qty * ((ING[s.ing] || {}).kg || 0), 0);
+  const clone = slots => slots.map(s => Object.assign({}, s));
+
+  // ---- features: what the model can "see" in a recipe ----
+  // Per ingredient: used?, amount, amount², gauge (in notches from 50), gauge², slot position, share of the barrel.
+  // Per slot: that slot's gauge. Overall: total amount, number of ingredients.
+  const PRIOR_SD = [];
+  INGS.forEach(() => PRIOR_SD.push(1.0, 0.6, 0.3, 0.6, 0.4, 0.4, 0.25, 0.8));
+  PRIOR_SD.push(0.4, 0.4, 0.4, 0.4, 0.4, 0.5, 0.5);
+  const D = PRIOR_SD.length;
+  function features(slots){
+    const c = compact(slots), used = c.filter(live);
+    const tot = used.reduce((t, s) => t + s.qty, 0) || 1;
+    const v = [];
+    INGS.forEach(ing => {
+      const here = [];
+      c.forEach((s, p) => { if(live(s) && s.ing === ing) here.push({ s, p }); });
+      if(!here.length){ v.push(0, 0, 0, 0, 0, 0, 0, 0); return; }
+      const q = here.reduce((t, o) => t + o.s.qty, 0);
+      const g = here.reduce((t, o) => t + (((o.s.gauge == null ? 50 : o.s.gauge) - 50) / 25) * o.s.qty, 0) / q;
+      const pos = here[0].p - 2;
+      v.push(1, q / 4, (q / 4) * (q / 4), g, g * g, pos, pos * pos, q / tot);
+    });
+    c.forEach(s => v.push(live(s) ? ((s.gauge == null ? 50 : s.gauge) - 50) / 25 : 0));
+    v.push(tot / 8, used.length);
+    return v;
+  }
+
+  function invert(A){
+    const n = A.length, M = A.map((row, i) => row.concat(Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))));
+    for(let c = 0; c < n; c++){
+      let p = c;
+      for(let r = c + 1; r < n; r++) if(Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+      [M[c], M[p]] = [M[p], M[c]];
+      const d = M[c][c] || 1e-12;
+      for(let j = 0; j < 2 * n; j++) M[c][j] /= d;
+      for(let r = 0; r < n; r++){
+        if(r === c) continue;
+        const f = M[r][c]; if(!f) continue;
+        for(let j = 0; j < 2 * n; j++) M[r][j] -= f * M[c][j];
+      }
+    }
+    return M.map(row => row.slice(n));
+  }
+
+  // ---- fit the model to the rated runs ----
+  function fit(runs){
+    const data = runs.filter(r => compact(r.slots).some(live) && compact(r.slots).filter(live).every(s => s.gauge != null) && r.tier >= 1);
+    const X = data.map(r => features(r.slots)), y = data.map(r => Number(r.tier));
+    const n = X.length;
+    const ybar = y.reduce((a, b) => a + b, 0) / (n || 1);
+    const xbar = Array(D).fill(0);
+    X.forEach(x => x.forEach((v, j) => { xbar[j] += v / n; }));
+    const Xc = X.map(x => x.map((v, j) => v - xbar[j]));
+
+    // How much the same recipe varies between batches (from repeats); default if no repeats yet.
+    const groups = {};
+    data.forEach(r => { (groups[key(r.slots)] = groups[key(r.slots)] || []).push(Number(r.tier)); });
+    let ss = 0, df = 0;
+    Object.values(groups).forEach(g => {
+      if(g.length < 2) return;
+      const m = g.reduce((a, b) => a + b, 0) / g.length;
+      g.forEach(t => { ss += (t - m) ** 2; }); df += g.length - 1;
+    });
+    const sigma2 = df >= 2 ? Math.min(1.2, Math.max(0.15, ss / df)) : 0.35;
+
+    const A = PRIOR_SD.map((sd, i) => { const row = Array(D).fill(0); row[i] = 1 / ((sd * OPT.priorScale) ** 2); return row; });
+    Xc.forEach(x => { for(let i = 0; i < D; i++){ if(!x[i]) continue; for(let j = 0; j < D; j++) A[i][j] += x[i] * x[j] / sigma2; } });
+    const S = invert(A);
+    const b = Array(D).fill(0);
+    Xc.forEach((x, k) => x.forEach((v, j) => { b[j] += v * (y[k] - ybar) / sigma2; }));
+    const m = S.map(row => row.reduce((t, v, j) => t + v * b[j], 0));
+
+    function quad(d){ let t = 0; for(let i = 0; i < D; i++){ if(!d[i]) continue; let r = 0; for(let j = 0; j < D; j++) r += S[i][j] * d[j]; t += d[i] * r; } return Math.max(0, t); }
+    function predict(slots){
+      const phi = features(slots).map((v, j) => v - xbar[j]);
+      const mu = ybar + phi.reduce((t, v, j) => t + v * m[j], 0);
+      const v = quad(phi);
+      return { mu, sd: Math.sqrt(v), sdTot: Math.sqrt(v + sigma2), phi };
+    }
+    function delta(a, b){
+      const fa = features(a), fb = features(b), d = fb.map((v, j) => v - fa[j]);
+      return { d: d.reduce((t, v, j) => t + v * m[j], 0), sd: Math.sqrt(quad(d)) };
+    }
+    return { n, used: data, sigma: Math.sqrt(sigma2), predict, delta };
+  }
+
+  // ---- candidate recipes ----
+  function neighbors(slots, qMax){
+    const base = compact(slots), f = base.filter(live), out = [];
+    const add = s => out.push(compact(s));
+    f.forEach((s, i) => {
+      NOTCHES.forEach(g => { if(g !== s.gauge){ const c = clone(base); c[i].gauge = g; add(c); } });
+      [-2, -1, 1, 2].forEach(d => { const q = s.qty + d; if(q >= 1 && q <= qMax){ const c = clone(base); c[i].qty = q; add(c); } });
+      INGS.forEach(ing => { if(!f.some(x => x.ing === ing)){ const c = clone(base); c[i].ing = ing; add(c); } });
+      if(f.length > 1){ const c = clone(base); c.splice(i, 1); add(c); }
+    });
+    for(let i = 0; i < f.length; i++) for(let j = i + 1; j < f.length; j++){ const c = clone(base); [c[i], c[j]] = [c[j], c[i]]; add(c); }
+    if(f.length < 5) INGS.forEach(ing => {
+      if(f.some(x => x.ing === ing)) return;
+      [1, 2, 3].forEach(q => NOTCHES.forEach(g => { const c = clone(base); c[f.length] = { ing, qty: q, gauge: g }; add(c); }));
+    });
+    return out;
+  }
+
+  function rng(seed){ let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function hash(str){ let h = 2166136261; for(let i = 0; i < str.length; i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+
+  function randomRecipe(r, qMax){
+    const pool = INGS.slice(), n = 1 + Math.floor(r() * 5), c = [];
+    for(let i = 0; i < n && pool.length; i++){
+      const ing = pool.splice(Math.floor(r() * pool.length), 1)[0];
+      c.push({ ing, qty: 1 + Math.floor(r() * qMax), gauge: NOTCHES[Math.floor(r() * 5)] });
+    }
+    return compact(c);
+  }
+
+  // Differences between two recipes, slot by slot, in plain words.
+  function changes(from, to){
+    const a = compact(from), b = compact(to), out = [];
+    for(let i = 0; i < 5; i++){
+      const x = a[i], y = b[i], n = i + 1;
+      if(!live(x) && !live(y)) continue;
+      if(!live(x)){ out.push(`Add ${nameOf(y.ing)} ×${y.qty} @${y.gauge} in slot ${n}`); continue; }
+      if(!live(y)){ out.push(`Remove ${nameOf(x.ing)} from slot ${n}`); continue; }
+      if(x.ing !== y.ing){ out.push(`Slot ${n}: ${nameOf(x.ing)} → ${nameOf(y.ing)} ×${y.qty} @${y.gauge}`); continue; }
+      if(x.qty !== y.qty) out.push(`Slot ${n} ${nameOf(y.ing)}: amount ${x.qty} → ${y.qty}`);
+      if(x.gauge !== y.gauge) out.push(`Slot ${n} ${nameOf(y.ing)}: gauge ${x.gauge} → ${y.gauge}`);
+    }
+    return out;
+  }
+  const distance = (a, b) => {
+    const x = compact(a), y = compact(b); let d = 0;
+    for(let i = 0; i < 5; i++){ if(x[i].ing !== y[i].ing) d += 2; else if(live(x[i])){ if(x[i].qty !== y[i].qty) d++; if(x[i].gauge !== y[i].gauge) d++; } }
+    return d;
+  };
+
+  const erf = x => { const t = 1 / (1 + 0.3275911 * Math.abs(x)); const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return x >= 0 ? y : -y; };
+  const cdf = z => 0.5 * (1 + erf(z / Math.SQRT2));
+
+  // ---- main entry ----
+  // runs: rated runs; busy: slot lists already brewing or awaiting a result (not suggested again).
+  function recommend(runs, busy, seedText, count){
+    count = count || 5;
+    const model = fit(runs || []);
+    const skipped = (runs || []).length - model.n;
+    if(model.n < 3) return { status: 'need-data', n: model.n, skipped };
+
+    const byKey = {};
+    model.used.forEach(r => {
+      const k = key(r.slots);
+      const g = byKey[k] = byKey[k] || { slots: compact(r.slots), tiers: [] };
+      g.tiers.push(Number(r.tier));
+    });
+    const tried = Object.values(byKey).map(g => Object.assign(g, {
+      best: Math.max(...g.tiers), avg: g.tiers.reduce((a, b) => a + b, 0) / g.tiers.length, pred: model.predict(g.slots).mu,
+    }));
+    const best = Math.max(...tried.map(g => g.best));
+    const goal = Math.min(best + 1, TOP_TIER);
+    const target = goal - 0.5;
+    const skip = new Set(Object.keys(byKey).concat((busy || []).map(key)));
+
+    const qMax = Math.max(6, ...model.used.flatMap(r => compact(r.slots).filter(live).map(s => s.qty))) + 2;
+    const r = rng(hash(seedText || ''));
+    const bases = tried.slice().sort((a, b) => b.best - a.best || b.avg - a.avg || b.pred - a.pred).slice(0, OPT.bases);
+    const topPred = tried.slice().sort((a, b) => b.pred - a.pred)[0];
+    if(!bases.includes(topPred)) bases.push(topPred);
+
+    const pool = [];
+    bases.forEach(bz => {
+      const ns = neighbors(bz.slots, qMax);
+      pool.push(...ns);
+      for(let i = 0; i < OPT.walks && ns.length; i++){
+        let cur = ns[Math.floor(r() * ns.length)];
+        for(let st = 1; st < OPT.steps; st++){ const nx = neighbors(cur, qMax); if(!nx.length) break; cur = nx[Math.floor(r() * nx.length)]; pool.push(cur); }
+      }
+    });
+    for(let i = 0; i < 250; i++) pool.push(randomRecipe(r, qMax));
+
+    const seen = new Set(), cands = [];
+    pool.forEach(slots => {
+      const k = key(slots);
+      if(seen.has(k) || skip.has(k)) return; seen.add(k);
+      if(!slots.some(live) || kg(slots) > BARREL_KG) return;
+      const p = model.predict(slots);
+      cands.push({ slots, key: k, mu: p.mu, sd: p.sd, sdTot: p.sdTot, chance: 1 - cdf((target - p.mu) / p.sdTot) });
+    });
+    if(!cands.length) return { status: 'no-candidates', n: model.n, best, skipped };
+
+    // Pick a varied set: best chance, highest prediction, then alternates and explorers.
+    const picks = [];
+    const far = (c, d) => picks.every(p => distance(p.slots, c.slots) >= d);
+    const choose = (role, list, score) => {
+      for(const need of [3, 2, 1]){
+        const pick = list.filter(c => !picks.includes(c) && far(c, need)).sort((a, b) => score(b) - score(a))[0];
+        if(pick){ picks.push(Object.assign(pick, { role })); return; }
+      }
+    };
+    const K = OPT.kappa, KX = OPT.kappaExplore;
+    const ucb = c => c.mu + K * c.sd;
+    choose('Best bet', cands, ucb);
+    choose('Highest predicted', cands, c => c.mu);
+    choose('Strong alternative', cands, ucb);
+    const promising = cands.filter(c => c.mu >= best - OPT.exploreFloor);
+    choose('Explore', promising.length ? promising : cands, c => c.mu + KX * c.sd);
+    choose('Alternative', cands, c => c.mu);
+    picks.splice(count);
+
+    picks.forEach(p => {
+      const near = tried.slice().sort((a, b) => distance(a.slots, p.slots) - distance(b.slots, p.slots) || b.best - a.best)[0];
+      p.from = { tier: near.best, slots: near.slots };
+      p.changes = changes(near.slots, p.slots);
+      p.kg = kg(p.slots);
+    });
+
+    // What the model is confident about, measured as single changes to the best recipe.
+    const base = tried.filter(g => g.best === best).sort((a, b) => b.pred - a.pred)[0];
+    const insights = [];
+    const bs = base.slots, bf = bs.filter(live);
+    const tryMove = (slots, text) => {
+      if(!slots.some(live) || kg(slots) > BARREL_KG) return;
+      const d = model.delta(bs, slots);
+      if(d.sd > 0 && Math.abs(d.d) >= 0.15 && Math.abs(d.d) / d.sd >= 1.2) insights.push({ text, d: d.d, z: d.d / d.sd });
+    };
+    bf.forEach((s, i) => {
+      [-25, 25].forEach(dg => { const g = s.gauge + dg; if(g >= 0 && g <= 100){ const c = clone(bs); c[i].gauge = g; tryMove(c, `Slot ${i + 1} ${nameOf(s.ing)} gauge ${s.gauge} → ${g}`); } });
+      [-1, 1].forEach(dq => { const q = s.qty + dq; if(q >= 1){ const c = clone(bs); c[i].qty = q; tryMove(c, `Slot ${i + 1} ${nameOf(s.ing)} amount ${s.qty} → ${q}`); } });
+      if(bf.length > 1){ const c = clone(bs); c.splice(i, 1); tryMove(compact(c), `Leave out ${nameOf(s.ing)}`); }
+      if(i < bf.length - 1){ const c = clone(bs); [c[i], c[i + 1]] = [c[i + 1], c[i]]; tryMove(c, `Swap slots ${i + 1} and ${i + 2} (${nameOf(s.ing)} ↔ ${nameOf(bf[i + 1].ing)})`); }
+    });
+    if(bf.length < 5) INGS.forEach(ing => { if(!bf.some(x => x.ing === ing)){ const c = clone(bs); c[bf.length] = { ing, qty: 1, gauge: 50 }; tryMove(c, `Add ${nameOf(ing)} (×1 @50)`); } });
+    insights.sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
+
+    return { status: 'ok', n: model.n, skipped, sigma: model.sigma, best, goal, picks, insights: insights.slice(0, 5), base: base.slots };
+  }
+
+  return { recommend, compact, key, kg, fit };
+})();
+// ===== Recipe advisor (end) =====
+
+// ---------- Recipe advisor panel ----------
+let advisorOpen = false, advisorSig = '', advisorResult = null;
+function toggleAdvisor(){ advisorOpen = !advisorOpen; renderAdvisor(); }
+function advisorBusy(){
+  return stills.pending.map(p => p.slots).concat(STATION_IDS.filter(id => stills.stations[id].brewing).map(id => stills.stations[id].slots));
+}
+function renderAdvisor(){
+  const out = document.getElementById('advisorOut'), btn = document.getElementById('advisorBtn');
+  if(!out || !btn) return;
+  btn.textContent = advisorOpen ? 'Hide recommendations' : 'Get recommendations';
+  out.style.display = advisorOpen ? 'block' : 'none';
+  const meta = document.getElementById('advisorMeta');
+  if(!advisorOpen){ meta.textContent = ''; return; }
+  const busy = advisorBusy();
+  const sig = JSON.stringify([stills.runs.map(r => [r.id, r.tier]).sort(), busy.map(b => Advisor.key(b)).sort()]);
+  if(sig !== advisorSig){ advisorSig = sig; advisorResult = Advisor.recommend(stills.runs, busy, sig, 5); }
+  const res = advisorResult;
+  if(res.status === 'need-data'){
+    meta.textContent = '';
+    out.innerHTML = `<div class="advisor-goal">Rate at least 3 batches that have gauge positions recorded to get recommendations. You have ${res.n}.</div>`;
+    return;
+  }
+  if(res.status !== 'ok'){ out.innerHTML = `<div class="advisor-goal">Every nearby recipe has been tried or is brewing. Rate the batches in progress to unlock new picks.</div>`; return; }
+  meta.textContent = `${res.n} rated run${res.n===1?'':'s'}` + (res.skipped ? ` · ${res.skipped} older run${res.skipped===1?'':'s'} without gauges left out` : '');
+
+  const idle = STATION_IDS.filter(id => !stills.stations[id].brewing);
+  const goalName = TIER_NAMES[res.goal];
+  const conf = sd => sd < 0.45 ? 'Solid' : sd < 0.9 ? 'Rough' : 'Long shot';
+  const predicted = mu => { const t = Math.max(1, Math.min(TOP_TIER, Math.round(mu))); return `${tierTag(t)} <span style="color:var(--text-faint)">(${mu.toFixed(1)})</span>`; };
+  const cards = res.picks.map((p, i) => `<div class="rec-card ${i===0?'top':''}">
+      <div class="rec-role">${p.role}<span>#${i+1}</span></div>
+      ${barrelChips(p.slots)}
+      <div class="rec-stats">
+        <div><label>Predicted</label><b>${predicted(p.mu)}</b></div>
+        <div><label>Chance of ${goalName}${res.goal < TOP_TIER ? '+' : ''}</label><b>${Math.round(p.chance * 100)}%</b></div>
+        <div><label>Confidence</label><b>${conf(p.sd)}</b></div>
+        <div><label>Weight</label><b>${kgText(p.kg)}</b></div>
+      </div>
+      <div class="rec-why">Changes from your ${TIER_NAMES[p.from.tier]} recipe:<ul>${p.changes.map(c => `<li>${escapeHtml(c)}</li>`).join('') || '<li>New combination</li>'}</ul></div>
+      <div class="rec-load">${idle.length ? 'Load into station ' + idle.map(id => `<button type="button" class="btn small ghost" title="Load into Station ${id.slice(1)}" aria-label="Load pick ${i+1} into Station ${id.slice(1)}" onclick="loadRecipe(${i},'${id}')">${id.slice(1)}</button>`).join('') : 'All stations are brewing'}</div>
+    </div>`).join('');
+  const ins = res.insights.length
+    ? `<ul>${res.insights.map(x => `<li>${escapeHtml(x.text)}: <span class="${x.d > 0 ? 'up' : 'down'}">likely ${x.d > 0 ? 'raises' : 'lowers'} the result (${x.d > 0 ? '+' : '−'}${Math.abs(x.d).toFixed(1)} level)</span></li>`).join('')}</ul>`
+    : `<div class="field-note" style="margin-top:6px;">Not enough variety yet to say for sure what helps. The picks are chosen to find out.</div>`;
+  out.innerHTML = `<div class="advisor-goal"><span>${res.best >= TOP_TIER
+      ? `You've hit <b>Legendary</b>. These picks aim to make it repeatable.`
+      : `Best so far: <b>${TIER_NAMES[res.best]}</b>. Aiming for <b>${goalName}</b> and up. Predictions are estimates from your runs and get sharper with every batch you rate.`}</span>
+      ${idle.length && res.picks.length ? `<button type="button" class="btn small" onclick="loadAllPicks()">Fill ${Math.min(idle.length, res.picks.length)} idle station${Math.min(idle.length, res.picks.length)===1?'':'s'} with the top picks</button>` : ''}</div>
+    <div class="rec-grid">${cards}</div>
+    <div class="insights"><div class="label" style="font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-faint);">What your runs say about your best recipe</div>${ins}</div>`;
+}
+function loadRecipe(i, stationId){
+  const p = advisorResult && advisorResult.picks && advisorResult.picks[i];
+  const s = stills.stations[stationId];
+  if(!p || !s || s.brewing) return;
+  s.slots = Advisor.compact(p.slots).map(x => ({ ing: x.ing, qty: x.qty, gauge: x.gauge == null ? 50 : x.gauge }));
+  renderStill(); saveStation(stationId, true);
+  setStillStatus(`Loaded pick #${i+1} into Station ${stationId.slice(1)}`);
+}
+function loadAllPicks(){
+  if(!advisorResult || !advisorResult.picks) return;
+  const idle = STATION_IDS.filter(id => !stills.stations[id].brewing);
+  const n = Math.min(idle.length, advisorResult.picks.length);
+  for(let i = 0; i < n; i++){
+    const s = stills.stations[idle[i]];
+    s.slots = Advisor.compact(advisorResult.picks[i].slots).map(x => ({ ing: x.ing, qty: x.qty, gauge: x.gauge == null ? 50 : x.gauge }));
+    saveStation(idle[i], true);
+  }
+  renderStill();
+  setStillStatus(`Loaded ${n} pick${n===1?'':'s'} into idle stations`);
+}
+
 // ---------- Backup / export ----------
 function downloadFile(name, text, type){
   const url = URL.createObjectURL(new Blob([text], { type }));
