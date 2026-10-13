@@ -435,7 +435,10 @@
       <div class="x-card advisor" style="margin-bottom:26px;">
         <div class="advisor-head">
           <div class="field-note" style="margin:0;max-width:640px;">Learns from every rated run which ingredients, amounts, slot order and gauge notches raise the level, then picks untried recipes with the best shot at your next level. Picks update each time you rate a batch.</div>
-          <button type="button" class="btn primary" id="advisorBtn" onclick="toggleAdvisor()">Get recommendations</button>
+          <span style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="btn" id="advisorDeepBtn" onclick="reanalyze()" title="Pull the newest batches from the server and run the full, slower review">Re-analyze</button>
+            <button type="button" class="btn primary" id="advisorBtn" onclick="toggleAdvisor()">Get recommendations</button>
+          </span>
         </div>
         <div id="advisorOut" style="display:none;"></div>
       </div>
@@ -2244,7 +2247,7 @@ const Advisor = (() => {
   }
 
   // ---- fit the model to the rated runs ----
-  function fit(runs){
+  function fit(runs, fixedSigma2){
     const data = runs.filter(r => compact(r.slots).some(live) && compact(r.slots).filter(live).every(s => s.gauge != null) && r.tier >= 1);
     const X = data.map(r => features(r.slots)), y = data.map(r => Number(r.tier));
     const n = X.length;
@@ -2262,7 +2265,7 @@ const Advisor = (() => {
       const m = g.reduce((a, b) => a + b, 0) / g.length;
       g.forEach(t => { ss += (t - m) ** 2; }); df += g.length - 1;
     });
-    const sigma2 = df >= 2 ? Math.min(1.2, Math.max(0.15, ss / df)) : 0.35;
+    const sigma2 = fixedSigma2 || (df >= 2 ? Math.min(1.2, Math.max(0.15, ss / df)) : 0.35);
 
     const A = PRIOR_SD.map((sd, i) => { const row = Array(D).fill(0); row[i] = 1 / ((sd * OPT.priorScale) ** 2); return row; });
     Xc.forEach(x => { for(let i = 0; i < D; i++){ if(!x[i]) continue; for(let j = 0; j < D; j++) A[i][j] += x[i] * x[j] / sigma2; } });
@@ -2282,7 +2285,7 @@ const Advisor = (() => {
       const fa = features(a), fb = features(b), d = fb.map((v, j) => v - fa[j]);
       return { d: d.reduce((t, v, j) => t + v * m[j], 0), sd: Math.sqrt(quad(d)) };
     }
-    return { n, used: data, sigma: Math.sqrt(sigma2), predict, delta };
+    return { n, used: data, sigma: Math.sqrt(sigma2), sigma2, predict, delta };
   }
 
   // ---- candidate recipes ----
@@ -2343,7 +2346,9 @@ const Advisor = (() => {
 
   // ---- main entry ----
   // runs: rated runs; busy: slot lists already brewing or awaiting a result (not suggested again).
-  function recommend(runs, busy, seedText, count){
+  // deep = a full review requested by the person (fresh data). The search itself is the same:
+  // heavier variants were tested in simulation and did not find Legendary any faster.
+  function recommend(runs, busy, seedText, count, deep){
     count = count || 5;
     const model = fit(runs || []);
     const skipped = (runs || []).length - model.n;
@@ -2392,6 +2397,7 @@ const Advisor = (() => {
     });
     if(!cands.length) return { status: 'no-candidates', n: model.n, best, skipped };
 
+
     // Pick a varied set: best chance, highest prediction, then alternates and explorers.
     const picks = [];
     const far = (c, d) => picks.every(p => distance(p.slots, c.slots) >= d);
@@ -2404,6 +2410,7 @@ const Advisor = (() => {
     };
 
     // ---- Legendary hunt: you already make Excellent, so only Legendary counts now ----
+    let huntScored = 0;
     const anchors = OPT.hunt && best >= OPT.huntFrom ? tried.filter(g => g.best >= OPT.huntFrom)
       .map(g => Object.assign({}, g, { slots: valid(g.slots) ? g.slots : complete(g.slots), hits: g.tiers.filter(t => t >= OPT.huntFrom).length }))
       .sort((a, b) => b.hits - a.hits || (b.hits / b.tiers.length) - (a.hits / a.tiers.length) || b.avg - a.avg || b.pred - a.pred)
@@ -2428,6 +2435,7 @@ const Advisor = (() => {
         n1.forEach(c => consider(c, a, 1));
         n1.filter(() => ai === 0 || r() < 0.35).forEach(c1 => neighbors(c1, qMax).forEach(c2 => consider(c2, a, 2)));
       });
+      huntScored = near.length;
       // Search in stages: single knob turns first (the tip), then single amount/order changes, then pairs.
       // Inside each stage the model orders the options, so the data decides what to try first.
       const stage = c => c.moves === 1 && c.kind === 'knob' ? 1 : c.moves === 1 ? 2 : 3;
@@ -2447,6 +2455,7 @@ const Advisor = (() => {
       picks.forEach(p => { if(p.anchor){ p.from = { tier: p.anchor.best, slots: p.anchor.slots }; p.changes = changes(p.anchor.slots, p.slots); p.kg = kg(p.slots); } });
     }
     const hunt = anchors.length > 0;
+    const nearCount = hunt ? huntScored : 0;
     if(!hunt){
       const K = OPT.kappa, KX = OPT.kappaExplore;
       const ucb = c => c.mu + K * c.sd;
@@ -2503,10 +2512,10 @@ const Advisor = (() => {
         return { g, state: 'untested', chance: 1 - cdf(((TOP_TIER - 0.5) - p.mu) / p.sdTot) };
       }) }));
     }
-    return { status: 'ok', mode: hunt ? 'hunt' : 'climb', n: model.n, skipped, sigma: model.sigma, best, goal: hunt ? TOP_TIER : goal, picks, insights: insights.slice(0, 5), base: base.slots, production, knobMap };
+    return { status: 'ok', mode: hunt ? 'hunt' : 'climb', deep: !!deep, scored: cands.length + (hunt ? anchors.length && nearCount : 0), n: model.n, skipped, sigma: model.sigma, best, goal: hunt ? TOP_TIER : goal, picks, insights: insights.slice(0, 5), base: base.slots, production, knobMap };
   }
 
-  return { recommend, compact, key, kg, fit, valid, complete };
+  return { recommend, compact, key, kg, fit, valid, complete, changes, kindOf };
 })();
 // ===== Recipe advisor (end) =====
 
@@ -2516,16 +2525,61 @@ function toggleAdvisor(){ advisorOpen = !advisorOpen; renderAdvisor(); }
 function advisorBusy(){
   return stills.pending.map(p => p.slots).concat(STATION_IDS.filter(id => stills.stations[id].brewing).map(id => stills.stations[id].slots));
 }
+// The last full review is remembered on this device so the next one can say what's new.
+const ADV_LAST_KEY = 'cassanova-advisor-last';
+function readLastReview(){ try{ return JSON.parse(localStorage.getItem(ADV_LAST_KEY) || 'null'); } catch(e){ return null; } }
+function writeLastReview(v){ try{ localStorage.setItem(ADV_LAST_KEY, JSON.stringify(v)); } catch(e){} }
+let advisorRunning = false, advisorAt = null, advisorReview = null;
+const advisorSigFor = busy => JSON.stringify([stills.runs.map(r => [r.id, r.tier]).sort(), busy.map(b => Advisor.key(b)).sort()]);
+
+// Full review: pull the newest batches from the server (other devices and crewmates included),
+// then run the slow, thorough analysis.
+async function reanalyze(){
+  if(advisorRunning) return;
+  advisorRunning = true; advisorOpen = true;
+  const btn = document.getElementById('advisorDeepBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Reviewing…'; }
+  const out = document.getElementById('advisorOut');
+  if(out){ out.style.display = 'block'; out.innerHTML = '<div class="advisor-goal">Pulling the latest batches and reviewing every rated run…</div>'; }
+  try{
+    await loadStills();
+    await new Promise(r => setTimeout(r, 40));
+    const busy = advisorBusy(), sig = advisorSigFor(busy), prev = readLastReview();
+    advisorResult = Advisor.recommend(stills.runs, busy, sig, 5, true);
+    advisorSig = sig; advisorAt = Date.now();
+    const prevIds = new Set((prev && prev.ids) || []);
+    advisorReview = { since: prev ? prev.at : null, fresh: prev ? stills.runs.filter(r => !prevIds.has(r.id)).sort((a, b) => b.at - a.at) : null };
+    writeLastReview({ at: Date.now(), ids: stills.runs.map(r => r.id) });
+    setStillStatus('Full review done');
+  } finally {
+    advisorRunning = false;
+    if(btn){ btn.disabled = false; btn.textContent = 'Re-analyze'; }
+    renderStill();
+  }
+}
+
+// What one batch taught us, in plain words (hunt mode compares it to the production recipe).
+function explainRun(r, res){
+  if(r.tier >= TOP_TIER) return 'Legendary! Brew this exact recipe again to confirm it repeats.';
+  const pr = res && res.production;
+  if(!pr) return `Came back ${TIER_NAMES[r.tier]}.`;
+  const ch = Advisor.changes(pr.slots, r.slots);
+  if(!ch.length) return r.tier >= pr.tier ? `Production recipe held at ${TIER_NAMES[r.tier]}.` : `Production recipe came back ${TIER_NAMES[r.tier]}. Counts toward how reliable it is.`;
+  const what = ch.length <= 2 ? ch.join(' + ') : `${ch.length} changes from the production recipe`;
+  if(r.tier >= pr.tier) return `${what}: still ${TIER_NAMES[r.tier]}. Ruled out as the Legendary change.`;
+  return `${what}: dropped to ${TIER_NAMES[r.tier]}. That change hurts, so the advisor steers away from it.`;
+}
+
 function renderAdvisor(){
   const out = document.getElementById('advisorOut'), btn = document.getElementById('advisorBtn');
-  if(!out || !btn) return;
+  if(!out || !btn || advisorRunning) return;
   btn.textContent = advisorOpen ? 'Hide recommendations' : 'Get recommendations';
   out.style.display = advisorOpen ? 'block' : 'none';
   const meta = document.getElementById('advisorMeta');
   if(!advisorOpen){ meta.textContent = ''; return; }
   const busy = advisorBusy();
-  const sig = JSON.stringify([stills.runs.map(r => [r.id, r.tier]).sort(), busy.map(b => Advisor.key(b)).sort()]);
-  if(sig !== advisorSig){ advisorSig = sig; advisorResult = Advisor.recommend(stills.runs, busy, sig, 5); }
+  const sig = advisorSigFor(busy);
+  if(sig !== advisorSig){ advisorSig = sig; advisorResult = Advisor.recommend(stills.runs, busy, sig, 5); advisorAt = Date.now(); }
   const res = advisorResult;
   if(res.status === 'need-data'){
     meta.textContent = '';
@@ -2533,57 +2587,86 @@ function renderAdvisor(){
     return;
   }
   if(res.status !== 'ok'){ out.innerHTML = `<div class="advisor-goal">Every nearby recipe has been tried or is brewing. Rate the batches in progress to unlock new picks.</div>`; return; }
-  meta.textContent = `${res.n} rated run${res.n===1?'':'s'}` + (res.skipped ? ` · ${res.skipped} older run${res.skipped===1?'':'s'} without gauges left out` : '');
+  const when = advisorAt ? new Date(advisorAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : '';
+  meta.textContent = `Updated ${when} · ${res.n} rated run${res.n===1?'':'s'} · ${(res.scored || 0).toLocaleString()} recipes checked · ${res.deep ? 'full review' : 'quick update'}`
+    + (res.skipped ? ` · ${res.skipped} older run${res.skipped===1?'':'s'} without gauges left out` : '');
 
   const idle = STATION_IDS.filter(id => !stills.stations[id].brewing);
+  const hunt = res.mode === 'hunt' && res.production;
   const goalName = TIER_NAMES[res.goal];
   const conf = sd => sd < 0.45 ? 'Solid' : sd < 0.9 ? 'Rough' : 'Long shot';
   const predicted = mu => { const t = Math.max(1, Math.min(TOP_TIER, Math.round(mu))); return `${tierTag(t)} <span style="color:var(--text-faint)">(${mu.toFixed(1)})</span>`; };
+  const KIND = { knob: ['knob turn', 'knob turns'], amount: ['amount change', 'amount changes'], order: ['slot swap', 'slot swaps'], mixed: ['change', 'changes'] };
+  const tests = p => p.moves ? `${p.moves} ${KIND[p.kind || 'mixed'][p.moves === 1 ? 0 : 1]}` : `${p.changes.length} changes`;
+  const loadRow = i => `<div class="rec-load">${idle.length ? 'Load into station ' + idle.map(id => `<button type="button" class="btn small ghost" title="Load into Station ${id.slice(1)}" aria-label="Load pick ${i+1} into Station ${id.slice(1)}" onclick="loadRecipe(${i},'${id}')">${id.slice(1)}</button>`).join('') : 'All stations are brewing'}</div>`;
   const cards = res.picks.map((p, i) => `<div class="rec-card ${i===0?'top':''}">
       <div class="rec-role">${p.role}<span>#${i+1}</span></div>
       ${barrelChips(p.slots)}
-      <div class="rec-stats">
+      <div class="rec-stats">${hunt ? `
+        <div><label>Search order</label><b>#${i+1} of ${res.picks.length}</b></div>
+        <div><label>Tests</label><b>${tests(p)}</b></div>
+        <div><label>If not Legendary</label><b>${tierTag(Math.max(1, Math.min(TOP_TIER - 1, Math.round(p.mu))))}</b></div>
+        <div><label>Weight</label><b>${kgText(p.kg)}</b></div>` : `
         <div><label>Predicted</label><b>${predicted(p.mu)}</b></div>
-        <div><label>Chance of ${goalName}${res.goal < TOP_TIER ? '+' : ''}</label><b>${Math.round(p.chance * 100)}%</b></div>
+        <div><label>Chance of ${goalName}+</label><b>${Math.round(p.chance * 100)}%</b></div>
         <div><label>Confidence</label><b>${conf(p.sd)}</b></div>
-        <div><label>Weight</label><b>${kgText(p.kg)}</b></div>
+        <div><label>Weight</label><b>${kgText(p.kg)}</b></div>`}
       </div>
       <div class="rec-why">Changes from your ${TIER_NAMES[p.from.tier]} recipe:<ul>${p.changes.map(c => `<li>${escapeHtml(c)}</li>`).join('') || '<li>New combination</li>'}</ul></div>
-      <div class="rec-load">${idle.length ? 'Load into station ' + idle.map(id => `<button type="button" class="btn small ghost" title="Load into Station ${id.slice(1)}" aria-label="Load pick ${i+1} into Station ${id.slice(1)}" onclick="loadRecipe(${i},'${id}')">${id.slice(1)}</button>`).join('') : 'All stations are brewing'}</div>
+      ${loadRow(i)}
     </div>`).join('');
   const ins = res.insights.length
     ? `<ul>${res.insights.map(x => `<li>${escapeHtml(x.text)}: <span class="${x.d > 0 ? 'up' : 'down'}">likely ${x.d > 0 ? 'raises' : 'lowers'} the result (${x.d > 0 ? '+' : '−'}${Math.abs(x.d).toFixed(1)} level)</span></li>`).join('')}</ul>`
     : `<div class="field-note" style="margin-top:6px;">Not enough variety yet to say for sure what helps. The picks are chosen to find out.</div>`;
+
   let huntHtml = '';
-  if(res.mode === 'hunt' && res.production){
+  if(hunt){
     const pr = res.production, cov = pr.coverage;
     const loadBtns = idle.length ? 'Load into station ' + idle.map(id => `<button type="button" class="btn small ghost" style="padding:4px 9px;" title="Load into Station ${id.slice(1)}" onclick="loadProduction('${id}')">${id.slice(1)}</button>`).join(' ') : '';
+    // Untested knob turns are numbered in the order the advisor would test them.
+    const order = res.knobMap.flatMap(row => row.cells.filter(c => c.state === 'untested').map(c => ({ slot: row.slot, g: c.g, chance: c.chance })))
+      .sort((a, b) => b.chance - a.chance);
+    const rank = (slot, g) => order.findIndex(o => o.slot === slot && o.g === g) + 1;
     const cell = (row, c) => c.state === 'current'
       ? `<span class="kcell current" title="Your ${TIER_NAMES[pr.tier]} recipe">★ now</span>`
       : c.state === 'tested'
         ? `<span class="kcell tested" title="Tested ${c.n}×, best ${TIER_NAMES[c.tier]}"><span class="tier-dot tier-${c.tier}"></span>${({1:'Below',2:'Avg',3:'Above',4:'Good',5:'Great',6:'Exc',7:'Leg'})[c.tier]}</span>`
-        : `<button type="button" class="kcell" title="Untested. ${Math.round(c.chance * 100)}% predicted chance of Legendary. Click to load into the next idle station." onclick="loadKnob(${row.slot - 1},${c.g})">${Math.round(c.chance * 100)}%</button>`;
+        : `<button type="button" class="kcell" title="Untested. Number ${rank(row.slot, c.g)} in test order. Click to load it into the next idle station." onclick="loadKnob(${row.slot - 1},${c.g})">#${rank(row.slot, c.g)}</button>`;
+    const left = (cov.knob[1] - cov.knob[0]) + (cov.other[1] - cov.other[0]);
     huntHtml = `<div class="hunt-top">
       <div class="hunt-box"><div class="hunt-h">Production recipe<span>${TIER_NAMES[pr.tier]} in ${pr.hits} of ${pr.total} brew${pr.total===1?'':'s'}</span></div>
         <div class="field-note" style="margin:0;">Brew this for profit while the hunt runs.</div>
         ${barrelChips(pr.slots)}
         <div class="rec-load">${loadBtns}</div>
-        <div class="field-note" style="margin:0;">Single changes tested around it: knob turns ${cov.knob[0]} of ${cov.knob[1]}, amount and order changes ${cov.other[0]} of ${cov.other[1]}.</div></div>
+        <div class="field-note" style="margin:0;"><b style="color:var(--text)">Hunt progress:</b> knob turns ruled out ${cov.knob[0]} of ${cov.knob[1]} · amount and order changes ruled out ${cov.other[0]} of ${cov.other[1]}${left ? ` · about ${Math.ceil(left / 5)} more round${Math.ceil(left / 5)===1?'':'s'} of 5 to cover every single change` : ' · every single change is covered, now testing pairs'}.</div></div>
       <div class="hunt-box"><div class="hunt-h">Knob map<span>one gauge change at a time</span></div>
         <div class="tbl-scroll"><table class="knobmap"><thead><tr><th>Slot</th>${[0,25,50,75,100].map(g => `<th>${g}</th>`).join('')}</tr></thead>
         <tbody>${res.knobMap.map(row => `<tr><td><b style="color:var(--${SLOT_COLORS[row.slot-1]})">${row.slot}</b> ${escapeHtml(ING[row.ing].name)}</td>${row.cells.map(c => `<td>${cell(row, c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
-        <div class="field-note" style="margin:0;">★ your recipe's setting · dots show tested results · % is the predicted chance of Legendary for untested turns (click to load one).</div></div>
+        <div class="field-note" style="margin:0;">★ your recipe's setting · dots are tested results · #1, #2… is the order to test the rest (click one to load it).</div></div>
     </div>`;
   }
+
+  let reviewHtml = '';
+  if(res.deep && advisorReview){
+    const fresh = advisorReview.fresh;
+    reviewHtml = `<div class="insights" style="margin-top:0;margin-bottom:14px;border-top:none;padding-top:0;">
+      <div class="label" style="font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-faint);">${fresh === null ? 'First full review' : `Since your last review (${new Date(advisorReview.since).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })})`}</div>
+      ${fresh === null ? `<div class="field-note" style="margin-top:6px;">From now on, this spot lists what each new batch ruled out.</div>`
+        : fresh.length ? `<ul>${fresh.slice(0, 12).map(r => `<li>${tierTag(r.tier)} · ${escapeHtml(explainRun(r, res))}</li>`).join('')}</ul>${fresh.length > 12 ? `<div class="field-note">…and ${fresh.length - 12} more.</div>` : ''}`
+        : `<div class="field-note" style="margin-top:6px;">No new rated batches since then.</div>`}
+    </div>`;
+  }
+
   out.innerHTML = `<div class="advisor-goal"><span>${res.best >= TOP_TIER
       ? `You've hit <b>Legendary</b>. These picks aim to make it repeatable.`
-      : res.mode === 'hunt'
-        ? `<b>Legendary hunt.</b> You already make ${TIER_NAMES[res.best]}, so every pick now aims only at Legendary: single knob turns on your recipe first, then single amount and slot-order changes (one every round), then pairs of changes, plus one wider pick in case it needs more.`
+      : hunt
+        ? `<b>Legendary hunt.</b> You already make ${TIER_NAMES[res.best]}, so every pick is a Legendary attempt built on your production recipe: single knob turns first, one amount or slot-order change every round, then pairs, plus one wider pick. Nobody can put honest odds on Legendary before you've seen it once, so picks are listed in test order, and every miss rules something out.`
         : `Best so far: <b>${TIER_NAMES[res.best]}</b>. Aiming for <b>${goalName}</b> and up. Predictions are estimates from your runs and get sharper with every batch you rate.`}</span>
       ${idle.length && res.picks.length ? `<button type="button" class="btn small" onclick="loadAllPicks()">Fill ${Math.min(idle.length, res.picks.length)} idle station${Math.min(idle.length, res.picks.length)===1?'':'s'} with the top picks</button>` : ''}</div>
+    ${reviewHtml}
     ${huntHtml}
     <div class="rec-grid">${cards}</div>
-    <div class="insights"><div class="label" style="font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-faint);">What your runs say about your best recipe</div>${ins}</div>`;
+    <div class="insights"><div class="label" style="font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-faint);">What your runs say about your ${hunt ? 'production' : 'best'} recipe</div>${ins}</div>`;
 }
 function loadSlotsInto(slots, stationId, label){
   const s = stills.stations[stationId];
