@@ -2171,7 +2171,7 @@ const Advisor = (() => {
   // knobBonus / changeCost: a small nudge toward gauge-only and fewer changes (the "Legendary is a knob turn
   // away" tip); kept small so the data still decides.
   const OPT = Object.assign({ kappa: 0.5, kappaExplore: 1.2, exploreFloor: 0.5, priorScale: 1, walks: 200, steps: 3, bases: 4,
-    hunt: true, huntFrom: 6, knobBonus: 0.03, changeCost: 0.02, nearMax: 2 }, (typeof globalThis !== 'undefined' && globalThis.ADVISOR_OPTS) || {});
+    hunt: true, huntFrom: 6, knobBonus: 0.03, changeCost: 0.02, nearMax: 2, notchSd: 0.7 }, (typeof globalThis !== 'undefined' && globalThis.ADVISOR_OPTS) || {});
   const INGS = MOON_INGS.map(x => x[0]);
   const NOTCHES = [0, 25, 50, 75, 100];
   // Still rules: all 5 ingredients, one per slot, each 2 to 8 units.
@@ -2210,6 +2210,9 @@ const Advisor = (() => {
   const PRIOR_SD = [];
   INGS.forEach(() => PRIOR_SD.push(1.0, 0.6, 0.3, 0.6, 0.4, 0.4, 0.25, 0.8));
   PRIOR_SD.push(0.4, 0.4, 0.4, 0.4, 0.4, 0.5, 0.5);
+  // Right-notch features: for each ingredient, one switch per gauge notch. A still where each gauge has
+  // one correct setting shows up here as a single strong notch per ingredient.
+  INGS.forEach(() => NOTCHES.forEach(() => PRIOR_SD.push(OPT.notchSd)));
   const D = PRIOR_SD.length;
   function features(slots){
     const c = compact(slots), used = c.filter(live);
@@ -2226,6 +2229,10 @@ const Advisor = (() => {
     });
     c.forEach(s => v.push(live(s) ? ((s.gauge == null ? 50 : s.gauge) - 50) / 25 : 0));
     v.push(tot / 8, used.length);
+    INGS.forEach(ing => {
+      const s = c.find(x => live(x) && x.ing === ing);
+      NOTCHES.forEach(g => v.push(s && s.gauge === g ? 1 : 0));
+    });
     return v;
   }
 
@@ -2286,6 +2293,67 @@ const Advisor = (() => {
       return { d: d.reduce((t, v, j) => t + v * m[j], 0), sd: Math.sqrt(quad(d)) };
     }
     return { n, used: data, sigma: Math.sqrt(sigma2), sigma2, predict, delta };
+  }
+
+  // ---- right-notch model ----
+  // Assumes each ingredient's gauge has one right notch and the level rises about one step per gauge
+  // set right. Every possible set of right notches (5^5 = 3125) is scored by how well it explains the
+  // rated runs; the result is how likely each full gauge setting is to be the complete, all-right set.
+  const notchCode = slots => {
+    const c = compact(slots).filter(live);
+    if(c.length !== INGS.length || new Set(c.map(s => s.ing)).size !== INGS.length) return -1;
+    let code = 0;
+    for(let i = INGS.length - 1; i >= 0; i--){
+      const s = c.find(x => x.ing === INGS[i]), k = s ? NOTCHES.indexOf(s.gauge) : -1;
+      if(k < 0) return -1;
+      code = code * 5 + k;
+    }
+    return code;
+  };
+  function notchModel(runs){
+    const rows = runs.map(r => ({ code: notchCode(r.slots), t: Number(r.tier) })).filter(r => r.code >= 0)
+      .map(r => ({ g: INGS.map((_, i) => Math.floor(r.code / 5 ** i) % 5), t: r.t }));
+    if(rows.length < 8) return null;
+    const n = rows.length, my = rows.reduce((a, r) => a + r.t, 0) / n;
+    const sse = new Float64Array(3125).fill(Infinity), fitA = new Float64Array(3125), fitB = new Float64Array(3125);
+    let best = Infinity, bestSmooth = Infinity;
+    for(let code = 0; code < 3125; code++){
+      const tg = INGS.map((_, i) => Math.floor(code / 5 ** i) % 5);
+      let sm = 0, smm = 0, smt = 0;
+      const m = rows.map(r => { let k = 0; for(let i = 0; i < tg.length; i++) if(r.g[i] === tg[i]) k++; return k; });
+      m.forEach((k, j) => { sm += k; smm += k * k; smt += k * rows[j].t; });
+      const mx = sm / n, sxx = smm - n * mx * mx;
+      if(sxx <= 1e-9) continue;
+      const b = (smt - n * mx * my) / sxx, a = my - b * mx;
+      if(b <= 0) continue;
+      let e = 0; m.forEach((k, j) => { e += (a + b * k - rows[j].t) ** 2; });
+      sse[code] = e; fitA[code] = a; fitB[code] = b; if(e < best) best = e;
+      // The competing explanation: "closer to the target notch is better" (smooth), same target.
+      let sd = 0, sdd = 0, sdt = 0;
+      const dist = rows.map(r => { let k = 0; for(let i = 0; i < tg.length; i++) k += Math.abs(r.g[i] - tg[i]); return k; });
+      dist.forEach((k, j) => { sd += k; sdd += k * k; sdt += k * rows[j].t; });
+      const dx = sd / n, dxx = sdd - n * dx * dx;
+      if(dxx > 1e-9){
+        const db = (sdt - n * dx * my) / dxx, da = my - db * dx;
+        let e2 = 0; dist.forEach((k, j) => { e2 += (da + db * k - rows[j].t) ** 2; });
+        if(e2 < bestSmooth) bestSmooth = e2;
+      }
+    }
+    // Cautious weighting (variance 1 level²) so one odd batch can't settle the question on its own.
+    const w = new Float64Array(3125); let Z = 0;
+    for(let c = 0; c < 3125; c++){ if(sse[c] < Infinity){ w[c] = Math.exp(-(sse[c] - best) / 2); Z += w[c]; } }
+    for(let c = 0; c < 3125; c++) w[c] /= Z || 1;
+    // Compare with "gauges don't matter": only trust this model if it explains the runs much better.
+    const flat = rows.reduce((a, r) => a + (r.t - my) ** 2, 0);
+    let top = 0; for(let c = 1; c < 3125; c++) if(w[c] > w[top]) top = c;
+    const decode = code => INGS.map((ing, i) => ({ ing, gauge: NOTCHES[Math.floor(code / 5 ** i) % 5] }));
+    // A gauge setting already brewed without reaching Legendary is ruled out; the rest share the odds.
+    const ruledOut = new Set(runs.filter(r => Number(r.tier) < TOP_TIER).map(r => notchCode(r.slots)).filter(c => c >= 0));
+    let rest = 0; for(let c = 0; c < 3125; c++) if(!ruledOut.has(c)) rest += w[c];
+    const live = c => (c < 0 || ruledOut.has(c)) ? 0 : w[c] / (rest || 1);
+    let next = -1; for(let c = 0; c < 3125; c++) if(live(c) > (next < 0 ? 0 : live(next))) next = c;
+    return { code: notchCode, prob: slots => live(notchCode(slots)), fitsWell: best < 0.6 * flat && best < 0.6 * bestSmooth, n,
+      top: next < 0 ? null : { gauges: decode(next), share: live(next) } };
   }
 
   // ---- candidate recipes ----
@@ -2410,10 +2478,34 @@ const Advisor = (() => {
     };
 
     // ---- Legendary hunt: you already make Excellent, so only Legendary counts now ----
+    // Do amounts change the level? Compare runs with the same slot order and gauges but different amounts.
+    // If they never move the result by more than normal batch-to-batch noise, the hunt stops testing amounts.
+    const sigOf = slots => compact(slots).map(s => live(s) ? `${s.ing}@${s.gauge}` : '-').join('|');
+    const sigGroups = {};
+    model.used.forEach(r => {
+      const g = sigGroups[sigOf(r.slots)] = sigGroups[sigOf(r.slots)] || {};
+      (g[key(r.slots)] = g[key(r.slots)] || []).push(Number(r.tier));
+    });
+    const spreads = Object.values(sigGroups).filter(g => Object.keys(g).length >= 2).map(g => {
+      const means = Object.values(g).map(ts => ts.reduce((a, b) => a + b, 0) / ts.length);
+      return Math.max(...means) - Math.min(...means);
+    });
+    const amountsMatter = spreads.length < 2 ? null
+      : (Math.max(...spreads) >= 1.5 || spreads.reduce((a, b) => a + b, 0) / spreads.length >= 0.75);
+    const sameAsTried = slots => amountsMatter === false ? !!sigGroups[sigOf(slots)] : !!byKey[key(slots)];
+    const sigTiers = slots => { const g = sigGroups[sigOf(slots)]; return g ? [].concat(...Object.values(g)) : []; };
+
     let huntScored = 0;
+    const notches = OPT.hunt && best >= OPT.huntFrom ? notchModel(model.used) : null;
     const anchors = OPT.hunt && best >= OPT.huntFrom ? tried.filter(g => g.best >= OPT.huntFrom)
-      .map(g => Object.assign({}, g, { slots: valid(g.slots) ? g.slots : complete(g.slots), hits: g.tiers.filter(t => t >= OPT.huntFrom).length }))
-      .sort((a, b) => b.hits - a.hits || (b.hits / b.tiers.length) - (a.hits / a.tiers.length) || b.avg - a.avg || b.pred - a.pred)
+      .map(g => {
+        const slots = valid(g.slots) ? g.slots : complete(g.slots);
+        // when amounts don't matter, a recipe's record includes every batch with the same order and gauges
+        const ts = amountsMatter === false ? sigTiers(g.slots) : g.tiers;
+        return Object.assign({}, g, { slots, tiers: ts, own: g.tiers.length, hits: ts.filter(t => t >= OPT.huntFrom).length });
+      })
+      .sort((a, b) => b.hits - a.hits || (b.hits / b.tiers.length) - (a.hits / a.tiers.length) || b.own - a.own || b.avg - a.avg || b.pred - a.pred)
+      .filter((g, i, arr) => amountsMatter !== false || arr.findIndex(h => sigOf(h.slots) === sigOf(g.slots)) === i)
       .slice(0, 3) : [];
     if(anchors.length){
       const legendTarget = TOP_TIER - 0.5;
@@ -2421,12 +2513,15 @@ const Advisor = (() => {
       // Candidates are single moves (one gauge notch setting, one amount change, or one slot swap)
       // and pairs of moves away from an Excellent recipe. "moves" counts the steps, so a swap is one move.
       const near = [], nearSeen = new Set();
+      const busySig = new Set((busy || []).map(sigOf));
       const consider = (slots, anchor, moves) => {
-        const k = key(slots);
-        if(nearSeen.has(k) || skip.has(k) || !valid(slots) || kg(slots) > BARREL_KG) return;
+        const k = amountsMatter === false ? sigOf(slots) : key(slots);
+        if(nearSeen.has(k) || skip.has(key(slots)) || !valid(slots) || kg(slots) > BARREL_KG) return;
+        if(amountsMatter === false && (sameAsTried(slots) || busySig.has(sigOf(slots)))) return;
         nearSeen.add(k);
         const ch = changes(anchor.slots, slots);
         if(!ch.length) return;
+        if(amountsMatter === false && ch.some(t => /amount/.test(t))) return;
         const p = model.predict(slots);
         near.push({ slots, key: k, mu: p.mu, sd: p.sd, sdTot: p.sdTot, chance: 1 - cdf((legendTarget - p.mu) / p.sdTot), anchor, moves, kind: kindOf(ch) });
       };
@@ -2436,21 +2531,45 @@ const Advisor = (() => {
         n1.filter(() => ai === 0 || r() < 0.35).forEach(c1 => neighbors(c1, qMax).forEach(c2 => consider(c2, a, 2)));
       });
       huntScored = near.length;
-      // Search in stages: single knob turns first (the tip), then single amount/order changes, then pairs.
-      // Inside each stage the model orders the options, so the data decides what to try first.
+      // Search in stages: single knob turns first (the tip), then single order (or amount) changes, then pairs.
+      // Inside each stage the right-notch model orders the options when it fits the runs well,
+      // otherwise the main model does, so the data decides what to try first.
+      const nm = notches && notches.fitsWell ? notches : null;
+      near.forEach(c => { c.notchP = nm ? nm.prob(c.slots) : 0; });
       const stage = c => c.moves === 1 && c.kind === 'knob' ? 1 : c.moves === 1 ? 2 : 3;
-      const byStage = c => -stage(c) * 10 + c.chance + 1e-3 * c.mu;
-      const hs = c => c.chance + (c.kind === 'knob' ? OPT.knobBonus : 0) - OPT.changeCost * (c.moves - 1) + 1e-3 * c.mu;
+      const byStage = c => -stage(c) * 10 + (nm ? 4 * c.notchP : 0) + c.chance + 1e-3 * c.mu;
+      const hs = nm ? (c => c.notchP * 10 - OPT.changeCost * (c.moves - 1) + 1e-3 * c.mu)
+                    : (c => c.chance + (c.kind === 'knob' ? OPT.knobBonus : 0) - OPT.changeCost * (c.moves - 1) + 1e-3 * c.mu);
       const singlesLeft = near.filter(c => stage(c) === 1);
       const otherSingles = near.filter(c => stage(c) === 2);
-      choose('Best shot at Legendary', near, hs, [1]);                        // the model's top pick, any stage
-      const knobs = Math.max(1, count - 3);
-      for(let i = 0; i < knobs; i++) choose(c => ROLE[c.kind], singlesLeft.length ? singlesLeft : near, byStage, [2, 1]);
-      choose(c => ROLE[c.kind], otherSingles.length ? otherSingles : near, byStage, [2, 1]);  // don't rely only on knobs
+      if(nm){
+        // The right-notch model explains the runs well: test untried gauge settings in its order,
+        // one pick per setting (fewest changes wins), plus one slot-order test in case order matters.
+        const bestByCode = new Map();
+        near.filter(c => c.notchP > 0).forEach(c => {
+          const code = nm.code(c.slots), b = bestByCode.get(code);
+          if(!b || c.moves < b.moves || (c.moves === b.moves && c.kind === 'knob' && b.kind !== 'knob')) bestByCode.set(code, c);
+        });
+        const ranked = [...bestByCode.values()];
+        const rank = c => c.notchP * 10 - c.moves * 1e-3 + 1e-4 * c.chance;
+        // Amount tests stay in the mix until the runs show amounts don't change the level.
+        const amountCheck = amountsMatter !== false;
+        choose('Best shot at Legendary', ranked, rank, [1]);
+        for(let i = 0; i < count - (amountCheck ? 3 : 2); i++) choose(c => ROLE[c.kind], ranked, rank, [1]);
+        if(amountCheck) choose('Amount check', otherSingles.filter(c => c.kind === 'amount'), byStage, [1]);
+        choose('Order check', otherSingles.filter(c => c.kind === 'order'), c => c.chance, [1]);
+        const usedCodes = () => new Set(picks.map(p => nm.code(p.slots)));
+        while(picks.length < count && choose(c => ROLE[c.kind], near.filter(c => !usedCodes().has(nm.code(c.slots))), byStage, [1]));
+      } else {
+        choose('Best shot at Legendary', near, hs, [1]);                        // the model's top pick, any stage
+        const knobs = Math.max(1, count - 3);
+        for(let i = 0; i < knobs; i++) choose(c => ROLE[c.kind], singlesLeft.length ? singlesLeft : near, byStage, [2, 1]);
+        choose(c => ROLE[c.kind], otherSingles.length ? otherSingles : near, byStage, [2, 1]);  // don't rely only on knobs
+      }
       // One wider pick, in case Legendary needs more than a small tweak.
       const minCh = c => Math.min(...anchors.map(a => changes(a.slots, c.slots).length));
       const wide = cands.map(c => Object.assign(c, { chance: 1 - cdf((legendTarget - c.mu) / c.sdTot) })).filter(c => minCh(c) > OPT.nearMax);
-      choose('Wider search', wide, c => c.chance + 1e-3 * c.mu, [1]);
+      if(singlesLeft.length + otherSingles.length < count) choose('Wider search', wide, c => c.chance + 1e-3 * c.mu, [1]);
       while(picks.length < count && choose(c => ROLE[c.kind] || 'Alternative', near.concat(wide), byStage, [1]));
       picks.forEach(p => { if(p.anchor){ p.from = { tier: p.anchor.best, slots: p.anchor.slots }; p.changes = changes(p.anchor.slots, p.slots); p.kg = kg(p.slots); } });
     }
@@ -2500,19 +2619,31 @@ const Advisor = (() => {
       const st = { knob: [0, 0], other: [0, 0] };   // [tested, total] single moves around the recipe
       neighbors(a.slots, qMax).filter(valid).forEach(c => {
         const ch = changes(a.slots, c), kd = kindOf(ch) === 'knob' ? 'knob' : 'other';
-        st[kd][1]++; if(byKey[key(c)]) st[kd][0]++;
+        if(amountsMatter === false && kindOf(ch) === 'amount') return;
+        st[kd][1]++; if(sameAsTried(c)) st[kd][0]++;
       });
       production = { slots: a.slots, hits: a.hits, total: a.tiers.length, tier: a.best, coverage: st };
       knobMap = a.slots.filter(live).map((s, i) => ({ slot: i + 1, ing: s.ing, cells: NOTCHES.map(g => {
         if(g === s.gauge) return { g, state: 'current', tier: a.best };
         const c = clone(a.slots); c[i].gauge = g;
-        const t = byKey[key(c)];
-        if(t) return { g, state: 'tested', tier: Math.max(...t.tiers), n: t.tiers.length };
+        const ts = amountsMatter === false ? sigTiers(c) : (byKey[key(c)] || { tiers: [] }).tiers;
+        if(ts.length) return { g, state: 'tested', tier: Math.max(...ts), n: ts.length };
         const p = model.predict(c);
-        return { g, state: 'untested', chance: 1 - cdf(((TOP_TIER - 0.5) - p.mu) / p.sdTot) };
+        return { g, state: 'untested', chance: notches && notches.fitsWell ? notches.prob(c) + 1e-6 * p.mu : 1 - cdf(((TOP_TIER - 0.5) - p.mu) / p.sdTot) };
       }) }));
     }
-    return { status: 'ok', mode: hunt ? 'hunt' : 'climb', deep: !!deep, scored: cands.length + (hunt ? anchors.length && nearCount : 0), n: model.n, skipped, sigma: model.sigma, best, goal: hunt ? TOP_TIER : goal, picks, insights: insights.slice(0, 5), base: base.slots, production, knobMap };
+    const notchGuess = hunt && notches && notches.fitsWell && notches.top ? notches.top : null;
+    // Amounts don't change the level (and the barrel's output doesn't depend on them), so every
+    // suggested barrel uses the minimum amount of each ingredient: same result, least ingredients.
+    if(amountsMatter === false){
+      const lean = slots => compact(slots).map(s => live(s) ? Object.assign({}, s, { qty: QMIN }) : s);
+      picks.forEach(p => {
+        p.slots = lean(p.slots); p.kg = kg(p.slots);
+        if(p.from){ p.from = Object.assign({}, p.from, { slots: lean(p.from.slots) }); p.changes = changes(p.from.slots, p.slots); }
+      });
+      if(production){ production.slots = lean(production.slots); production.lean = true; }
+    }
+    return { status: 'ok', mode: hunt ? 'hunt' : 'climb', amountsMatter, notchGuess, deep: !!deep, scored: cands.length + (hunt ? anchors.length && nearCount : 0), n: model.n, skipped, sigma: model.sigma, best, goal: hunt ? TOP_TIER : goal, picks, insights: insights.slice(0, 5), base: base.slots, production, knobMap };
   }
 
   return { recommend, compact, key, kg, fit, valid, complete, changes, kindOf };
@@ -2633,11 +2764,16 @@ function renderAdvisor(){
         ? `<span class="kcell tested" title="Tested ${c.n}×, best ${TIER_NAMES[c.tier]}"><span class="tier-dot tier-${c.tier}"></span>${({1:'Below',2:'Avg',3:'Above',4:'Good',5:'Great',6:'Exc',7:'Leg'})[c.tier]}</span>`
         : `<button type="button" class="kcell" title="Untested. Number ${rank(row.slot, c.g)} in test order. Click to load it into the next idle station." onclick="loadKnob(${row.slot - 1},${c.g})">#${rank(row.slot, c.g)}</button>`;
     const left = (cov.knob[1] - cov.knob[0]) + (cov.other[1] - cov.other[0]);
-    huntHtml = `<div class="hunt-top">
+    const guess = res.notchGuess;
+    const guessHtml = guess ? `<div class="hunt-box" style="margin-bottom:12px;"><div class="hunt-h">Best guess at Legendary<span>from ${res.n} rated batches</span></div>
+        <div style="font-size:13px;">${guess.gauges.map(g => `<span class="chip" style="margin:0 4px 4px 0;">${escapeHtml(ING[g.ing].name)} <b>@${g.gauge}</b></span>`).join('')}</div>
+        <div class="field-note" style="margin:0;">Your batches behave like each gauge has one right notch, with every right gauge adding about a level. That pattern explains your results far better than anything else tried. If it holds, this setting has about a ${Math.round(guess.share * 100)}% chance of being the all-right one, and it hasn't been brewed yet. The picks below test it first. Every miss rules a setting out and the guess updates.</div></div>` : '';
+    huntHtml = guessHtml + `<div class="hunt-top">
       <div class="hunt-box"><div class="hunt-h">Production recipe<span>${TIER_NAMES[pr.tier]} in ${pr.hits} of ${pr.total} brew${pr.total===1?'':'s'}</span></div>
         <div class="field-note" style="margin:0;">Brew this for profit while the hunt runs.</div>
         ${barrelChips(pr.slots)}
         <div class="rec-load">${loadBtns}</div>
+        ${res.amountsMatter === false ? `<div class="field-note" style="margin:0;">Amounts don't change the level in your batches, and the barrel's output doesn't depend on them, so this recipe and every pick use ${MOON_MIN_QTY} of each ingredient, the least the still allows. The hunt also skips amount tests.</div>` : ''}
         <div class="field-note" style="margin:0;"><b style="color:var(--text)">Hunt progress:</b> knob turns ruled out ${cov.knob[0]} of ${cov.knob[1]} · amount and order changes ruled out ${cov.other[0]} of ${cov.other[1]}${left ? ` · about ${Math.ceil(left / 5)} more round${Math.ceil(left / 5)===1?'':'s'} of 5 to cover every single change` : ' · every single change is covered, now testing pairs'}.</div></div>
       <div class="hunt-box"><div class="hunt-h">Knob map<span>one gauge change at a time</span></div>
         <div class="tbl-scroll"><table class="knobmap"><thead><tr><th>Slot</th>${[0,25,50,75,100].map(g => `<th>${g}</th>`).join('')}</tr></thead>
