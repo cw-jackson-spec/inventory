@@ -198,7 +198,7 @@
   ::selection{background:var(--amber);color:var(--bg);}
 
   /* ---------- Pricing + Still Log (owner tabs) ---------- */
-  :root{ --t1:#8a8576; --t2:#9aa8b8; --t3:#4f9c82; --t4:#7cb342; --t5:#5b8def; --t6:#a77bf3; --t7:#e7b84a; --t7-bg:rgba(231,184,74,0.10); }
+  :root{ --t1:#8a8576; --t2:#9aa8b8; --t3:#4f9c82; --t4:#7cb342; --t5:#5b8def; --t6:#a77bf3; --t7:#ef7f8f; --t8:#e7b84a; --t8-bg:rgba(231,184,74,0.10); }
   .x-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);margin-bottom:18px;}
   .x-grid .cell{background:var(--panel);padding:12px 14px;min-width:0;}
   .x-grid .label{font-family:'Barlow Condensed',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--text-faint);margin-bottom:6px;}
@@ -222,7 +222,7 @@
   .slider-row span{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;}
   .tier-tag{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
   .tier-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none;}
-  .tier-1{background:var(--t1);} .tier-2{background:var(--t2);} .tier-3{background:var(--t3);} .tier-4{background:var(--t4);} .tier-5{background:var(--t5);} .tier-6{background:var(--t6);} .tier-7{background:var(--t7);}
+  .tier-1{background:var(--t1);} .tier-2{background:var(--t2);} .tier-3{background:var(--t3);} .tier-4{background:var(--t4);} .tier-5{background:var(--t5);} .tier-6{background:var(--t6);} .tier-7{background:var(--t7);} .tier-8{background:var(--t8);}
   .stations{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:26px;}
   .station{background:var(--panel);border:1px solid var(--border);padding:14px;display:flex;flex-direction:column;gap:9px;min-width:0;}
   .station.brewing{border-color:var(--profit);box-shadow:inset 0 2px 0 var(--profit);}
@@ -242,8 +242,8 @@
   .res-grid{display:grid;grid-template-columns:1fr;gap:5px;}
   .res-btn{display:flex;align-items:center;gap:6px;padding:7px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-size:13px;letter-spacing:.5px;text-transform:uppercase;text-align:left;}
   .res-btn:hover{border-color:var(--amber);}
-  .res-btn.t7{border-color:var(--t7);background:var(--t7-bg);}
-  tr.legend-row td{background:var(--t7-bg) !important;}
+  .res-btn.t8{border-color:var(--t8);background:var(--t8-bg);}
+  tr.legend-row td{background:var(--t8-bg) !important;}
   :root{ --g1:#ffcc00; --g2:#19f0c8; --g3:#14bff5; --g4:#b400ff; --g5:#ff7ae6; }
   .gauge-head{display:flex;justify-content:space-between;font-size:12px;color:var(--text-dim);margin-top:2px;}
   .gauge-row{display:grid;grid-template-columns:1fr 34px;align-items:center;gap:8px;}
@@ -266,7 +266,7 @@
   .lanes{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:26px;align-items:start;}
   .lane{background:var(--panel);border:1px solid var(--border);min-width:0;}
   .lane-head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border);font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;font-size:14px;}
-  .lane.t7{border-color:var(--t7);background:var(--t7-bg);}
+  .lane.t8{border-color:var(--t8);background:var(--t8-bg);}
   .lane-body{display:flex;flex-direction:column;gap:8px;padding:10px;}
   .lane-empty{color:var(--text-faint);font-size:11px;text-align:center;padding:8px 0;}
   .rcard{border:1px solid var(--border-soft);background:var(--bg);padding:8px;display:flex;flex-direction:column;gap:6px;}
@@ -1724,8 +1724,9 @@ function amountProblems(slots){
 }
 // Result levels, stored as numbers. Runs saved before 2026-10-12 used a 5-level scale whose
 // 4 ("Excellent") and 5 ("Legendary") are the same numbers as Good and Great here, so no data changes.
-const TIER_NAMES = {1:'Below Average',2:'Average',3:'Above Average',4:'Good',5:'Great',6:'Excellent',7:'Legendary'};
-const TIERS_UP = [1,2,3,4,5,6,7], TIERS_DOWN = [7,6,5,4,3,2,1], TOP_TIER = 7;
+// Perfect (7) was added 2026-10-16 below Legendary (now 8); no run had been rated 7 before then.
+const TIER_NAMES = {1:'Below Average',2:'Average',3:'Above Average',4:'Good',5:'Great',6:'Excellent',7:'Perfect',8:'Legendary'};
+const TIERS_UP = [1,2,3,4,5,6,7,8], TIERS_DOWN = [8,7,6,5,4,3,2,1], TOP_TIER = 8;
 // Slot N in the barrel pairs with gauge slider N (yellow, teal, blue, purple, pink), 0-100.
 const SLOT_COLORS = ['g1','g2','g3','g4','g5'];
 const emptySlots = () => [0,1,2,3,4].map(() => ({ ing:'', qty:0, gauge:50 }));
@@ -2080,7 +2081,7 @@ function renderStill(){
 
   document.getElementById('boardLanes').innerHTML = TIERS_DOWN.map(t => {
     const inLane = recs.filter(r => r.best === t);
-    return `<div class="lane ${t===TOP_TIER?'t7':''}"><div class="lane-head">${tierTag(t)}<span style="color:var(--text-faint);font-size:12px;">${inLane.length}</span></div>
+    return `<div class="lane ${t===TOP_TIER?'t8':''}"><div class="lane-head">${tierTag(t)}<span style="color:var(--text-faint);font-size:12px;">${inLane.length}</span></div>
       <div class="lane-body">${inLane.length ? inLane.map(r => `<div class="rcard">${barrelChips(r.slots)}
         <div class="rcard-meta"><span>${kgText(barrelKg(r.slots))} · ${r.runs} run${r.runs===1?'':'s'}</span>
         <span>${Object.keys(r.seen).sort((a,b)=>b-a).map(x => `<span class="tier-tag" title="${TIER_NAMES[x]}: ${r.seen[x]}"><span class="tier-dot tier-${x}"></span>${r.seen[x]}</span>`).join(' ')}</span></div></div>`).join('')
@@ -2356,6 +2357,109 @@ const Advisor = (() => {
       top: next < 0 ? null : { gauges: decode(next), share: live(next) } };
   }
 
+  // ---- slider-target model (Legendary hunt) ----
+  // In this still each slider belongs to a slot position, and Legendary is a specific setting of all
+  // five sliders. Every one of the 5^5 = 3125 settings is scored as "the Legendary target" under four
+  // explanations of how the level falls off as you move away from it. Settings already brewed without
+  // reaching Legendary are ruled out. The four are averaged so no single explanation steers the hunt.
+  const sliderCode = slots => {
+    const c = compact(slots).filter(live);
+    if(c.length !== 5) return -1;
+    let code = 0;
+    for(let k = 4; k >= 0; k--){ const i = NOTCHES.indexOf(c[k].gauge); if(i < 0) return -1; code = code * 5 + i; }
+    return code;
+  };
+  const sliderOf = code => [0, 1, 2, 3, 4].map(k => Math.floor(code / 5 ** k) % 5);
+  // Least-squares fit of "level never rises as you move further away" (pool adjacent violators).
+  function isoSSE(d, ys){
+    const m = new Map();
+    d.forEach((v, i) => { const e = m.get(v) || [0, 0]; e[0] += ys[i]; e[1]++; m.set(v, e); });
+    const st = [];
+    [...m.keys()].sort((a, b) => a - b).forEach(k => {
+      st.push(m.get(k).slice());
+      while(st.length > 1 && st[st.length - 2][0] / st[st.length - 2][1] < st[st.length - 1][0] / st[st.length - 1][1]){
+        const b = st.pop(); st[st.length - 1][0] += b[0]; st[st.length - 1][1] += b[1];
+      }
+    });
+    let sy2 = 0; ys.forEach(y => { sy2 += y * y; });
+    let fit = 0; st.forEach(b => { fit += b[0] * b[0] / b[1]; });
+    return sy2 - fit;
+  }
+  // Do the sliders belong to the slots or to the ingredients? Compare how well each idea predicts a batch
+  // it hasn't seen (leave-one-out). The slider hunt only takes over when "by slot" clearly wins.
+  function looMSE(X, ys, lam){
+    const n = X.length, p = X[0].length;
+    const xm = new Array(p).fill(0); X.forEach(v => v.forEach((x, j) => { xm[j] += x / n; }));
+    const ym = ys.reduce((a, b) => a + b, 0) / n;
+    const Xc = X.map(v => v.map((x, j) => x - xm[j]));
+    const A = Array.from({ length: p }, (_, i) => Array.from({ length: p }, (_, j) => (i === j ? lam : 0)));
+    Xc.forEach(v => { for(let i = 0; i < p; i++){ if(!v[i]) continue; for(let j = 0; j < p; j++) A[i][j] += v[i] * v[j]; } });
+    const Ai = invert(A), b = new Array(p).fill(0);
+    Xc.forEach((v, k) => v.forEach((x, j) => { b[j] += x * (ys[k] - ym); }));
+    const w = Ai.map(row => row.reduce((t, v, j) => t + v * b[j], 0));
+    let e = 0;
+    Xc.forEach((v, i) => {
+      let h = 1 / n; for(let a = 0; a < p; a++){ if(!v[a]) continue; let rr = 0; for(let c = 0; c < p; c++) rr += Ai[a][c] * v[c]; h += v[a] * rr; }
+      const pred = ym + v.reduce((t, x, j) => t + x * w[j], 0);
+      e += ((ys[i] - pred) / Math.max(1e-6, 1 - h)) ** 2;
+    });
+    return e / n;
+  }
+  function slidersBySlot(runs){
+    const rows = runs.filter(r => valid(r.slots) && compact(r.slots).filter(live).every(s => NOTCHES.includes(s.gauge)));
+    if(rows.length < 15) return null;
+    const ys = rows.map(r => Number(r.tier));
+    const bySlot = rows.map(r => { const v = new Array(25).fill(0); compact(r.slots).filter(live).forEach((s, k) => { v[5 * k + NOTCHES.indexOf(s.gauge)] = 1; }); return v; });
+    const byIng = rows.map(r => { const v = new Array(25).fill(0); compact(r.slots).filter(live).forEach(s => { v[5 * INGS.indexOf(s.ing) + NOTCHES.indexOf(s.gauge)] = 1; }); return v; });
+    const slot = looMSE(bySlot, ys, 1), ing = looMSE(byIng, ys, 1);
+    return { slot, ing, yes: slot < 0.9 * ing };
+  }
+  function sliderModel(runs){
+    const rows = runs.map(r => ({ code: sliderCode(r.slots), t: Number(r.tier) })).filter(r => r.code >= 0);
+    if(rows.length < 10) return null;
+    const G = rows.map(r => sliderOf(r.code)), ys = rows.map(r => r.t);
+    const results = new Map();
+    rows.forEach(r => { if(!results.has(r.code)) results.set(r.code, []); results.get(r.code).push(r.t); });
+    const ruled = new Set(rows.filter(r => r.t < TOP_TIER).map(r => r.code));
+    const open = []; for(let c = 0; c < 3125; c++) if(!ruled.has(c)) open.push(c);
+    const normalize = p => { let z = 0; open.forEach(c => { z += p[c]; }); open.forEach(c => { p[c] /= z || 1; }); return p; };
+    const models = [];
+    const DIST = {
+      'total notches off': (g, t) => { let k = 0; for(let i = 0; i < 5; i++) k += Math.abs(g[i] - t[i]); return k; },
+      'notches off, squared': (g, t) => { let k = 0; for(let i = 0; i < 5; i++) k += (g[i] - t[i]) ** 2; return k; },
+      'sliders not exactly right': (g, t) => { let k = 0; for(let i = 0; i < 5; i++) k += g[i] !== t[i] ? 1 : 0; return k; },
+    };
+    Object.entries(DIST).forEach(([name, dist]) => {
+      const sse = new Float64Array(3125).fill(Infinity); let best = Infinity;
+      open.forEach(c => { const t = sliderOf(c); const e = isoSSE(G.map(g => dist(g, t)), ys); sse[c] = e; if(e < best) best = e; });
+      const p = new Float64Array(3125); open.forEach(c => { p[c] = Math.exp(-(sse[c] - best) / 2); });
+      models.push({ name, p: normalize(p) });
+    });
+    // Slider-by-slider: each slider notch adds or subtracts on its own (Bayesian, cautious).
+    const X = G.map(g => { const v = new Array(25).fill(0); g.forEach((n, k) => { v[5 * k + n] = 1; }); return v; });
+    const xm = new Array(25).fill(0); X.forEach(v => v.forEach((x, j) => { xm[j] += x / X.length; }));
+    const ym = ys.reduce((a, b) => a + b, 0) / ys.length, s2 = 0.25;
+    const A = Array.from({ length: 25 }, (_, i) => Array.from({ length: 25 }, (_, j) => (i === j ? 1 : 0)));
+    const Xc = X.map(v => v.map((x, j) => x - xm[j]));
+    Xc.forEach(v => { for(let i = 0; i < 25; i++){ if(!v[i]) continue; for(let j = 0; j < 25; j++) A[i][j] += v[i] * v[j] / s2; } });
+    const S = invert(A), b = new Array(25).fill(0);
+    Xc.forEach((v, k) => v.forEach((x, j) => { b[j] += x * (ys[k] - ym) / s2; }));
+    const mw = S.map(row => row.reduce((t, v, j) => t + v * b[j], 0));
+    const pa = new Float64Array(3125);
+    open.forEach(c => {
+      const v = new Array(25).fill(0); sliderOf(c).forEach((n, k) => { v[5 * k + n] = 1; });
+      const x = v.map((q, j) => q - xm[j]);
+      const mu = ym + x.reduce((t, q, j) => t + q * mw[j], 0);
+      let va = s2; for(let i = 0; i < 25; i++){ if(!x[i]) continue; let rr = 0; for(let j = 0; j < 25; j++) rr += S[i][j] * x[j]; va += x[i] * rr; }
+      pa[c] = 1 - cdf((TOP_TIER - 0.5 - mu) / Math.sqrt(va));
+    });
+    models.push({ name: 'slider by slider', p: normalize(pa) });
+    const avg = new Float64Array(3125);
+    open.forEach(c => { models.forEach(m => { avg[c] += m.p[c] / models.length; }); });
+    models.forEach(m => { const order = open.slice().sort((x, y) => m.p[y] - m.p[x]); m.rank = new Map(order.slice(0, 25).map((c, i) => [c, i + 1])); });
+    return { code: sliderCode, of: sliderOf, avg, models, results, triedCount: results.size, open };
+  }
+
   // ---- candidate recipes ----
   function neighbors(slots, qMax){
     const base = compact(slots), f = base.filter(live), out = [];
@@ -2490,24 +2594,84 @@ const Advisor = (() => {
       const means = Object.values(g).map(ts => ts.reduce((a, b) => a + b, 0) / ts.length);
       return Math.max(...means) - Math.min(...means);
     });
-    const amountsMatter = spreads.length < 2 ? null
+    // Needs at least three comparisons before deciding amounts don't matter.
+    const amountsMatter = spreads.length < 3 ? null
       : (Math.max(...spreads) >= 1.5 || spreads.reduce((a, b) => a + b, 0) / spreads.length >= 0.75);
+    const maxSpread = spreads.length ? Math.max(...spreads) : 0;
+    const allMin = slots => compact(slots).filter(live).every(s => s.qty === QMIN);
     const sameAsTried = slots => amountsMatter === false ? !!sigGroups[sigOf(slots)] : !!byKey[key(slots)];
     const sigTiers = slots => { const g = sigGroups[sigOf(slots)]; return g ? [].concat(...Object.values(g)) : []; };
 
     let huntScored = 0;
-    const notches = OPT.hunt && best >= OPT.huntFrom ? notchModel(model.used) : null;
-    const anchors = OPT.hunt && best >= OPT.huntFrom ? tried.filter(g => g.best >= OPT.huntFrom)
+    // Hunt from the best level reached so far (Excellent at the least): once a recipe makes Perfect,
+    // only Perfect recipes are starting points, and a one-off Excellent can't outrank them.
+    const huntFrom = Math.max(OPT.huntFrom, best);
+    const notches = OPT.hunt && best >= huntFrom ? notchModel(model.used) : null;
+    const anchors = OPT.hunt && best >= OPT.huntFrom ? tried.filter(g => g.best >= huntFrom)
       .map(g => {
         const slots = valid(g.slots) ? g.slots : complete(g.slots);
         // when amounts don't matter, a recipe's record includes every batch with the same order and gauges
         const ts = amountsMatter === false ? sigTiers(g.slots) : g.tiers;
-        return Object.assign({}, g, { slots, tiers: ts, own: g.tiers.length, hits: ts.filter(t => t >= OPT.huntFrom).length });
+        // results at the minimum amounts, for recipes that will be brewed at the minimum
+        const atMin = amountsMatter === false ? model.used.filter(r => sigOf(r.slots) === sigOf(g.slots) && allMin(r.slots)).map(r => Number(r.tier)) : [];
+        return Object.assign({}, g, { slots, tiers: ts, own: g.tiers.length, hits: ts.filter(t => t >= huntFrom).length,
+          minHits: atMin.filter(t => t >= huntFrom).length, minTotal: atMin.length });
       })
-      .sort((a, b) => b.hits - a.hits || (b.hits / b.tiers.length) - (a.hits / a.tiers.length) || b.own - a.own || b.avg - a.avg || b.pred - a.pred)
+      .sort((a, b) => (amountsMatter === false ? (b.minHits > 0) - (a.minHits > 0) || b.minHits - a.minHits : 0) || b.hits - a.hits || (b.hits / b.tiers.length) - (a.hits / a.tiers.length) || b.own - a.own || b.avg - a.avg || b.pred - a.pred)
       .filter((g, i, arr) => amountsMatter !== false || arr.findIndex(h => sigOf(h.slots) === sigOf(g.slots)) === i)
       .slice(0, 3) : [];
-    if(anchors.length){
+    const slotCheck = anchors.length && best < TOP_TIER && OPT.sliders !== false ? slidersBySlot(model.used) : null;
+    // The slider-only hunt assumes amounts don't change the level. Once the runs show they do
+    // (the same sliders and order came back at different levels), the hunt also moves amounts.
+    const sm = slotCheck && slotCheck.yes && amountsMatter === false ? sliderModel(model.used) : null;
+    let sliderStats = null, amountHunt = null;
+    if(anchors.length && sm){
+      // Keep the production recipe's ingredient order and only move sliders: the sliders belong to the
+      // slots, so moving an ingredient would also move its setting onto a different slider.
+      const a0 = anchors[0], base = compact(a0.slots), lean = amountsMatter === false;
+      const build = code => { const g = sm.of(code); return base.map((x, k) => live(x) ? Object.assign({}, x, { gauge: NOTCHES[g[k]], qty: lean ? QMIN : x.qty }) : x); };
+      const busyCodes = new Set((busy || []).map(sm.code).filter(c => c >= 0));
+      const ranked = sm.open.filter(c => sm.avg[c] > 0 && !busyCodes.has(c)).sort((x, y) => sm.avg[y] - sm.avg[x]);
+      const baseCode = sm.code(base);
+      ranked.slice(0, count).forEach((code, i) => {
+        const slots = build(code), pr = model.predict(slots), g = sm.of(code), g0 = sm.of(baseCode);
+        picks.push({ slots, key: key(slots), role: i === 0 ? 'Best shot at Legendary' : 'Slider test',
+          mu: pr.mu, sd: pr.sd, sdTot: pr.sdTot, chance: sm.avg[code], share: sm.avg[code],
+          support: sm.models.filter(m => (m.rank.get(code) || 99) <= 5).map(m => m.name),
+          moves: g.filter((n, k) => n !== g0[k]).length, kind: 'knob', anchor: a0 });
+      });
+      const covered = picks.reduce((t, p) => t + p.share, 0);
+      sliderStats = { tried: sm.triedCount, total: 3125, covered, top: ranked.length ? { code: ranked[0], slots: build(ranked[0]), share: sm.avg[ranked[0]] } : null };
+      huntScored = 3125;
+      picks.forEach(p => { p.from = { tier: a0.best, slots: a0.slots }; p.changes = changes(a0.slots, p.slots).filter(t => !/amount/.test(t)); p.kg = kg(p.slots); });
+    } else if(anchors.length && amountsMatter === true && slotCheck && slotCheck.yes && best >= huntFrom && best >= 7){
+      // Amount hunt. The sliders are settled (they belong to the slots, and your best recipe is at their
+      // best setting), but the same sliders came back at different levels with different amounts. So keep
+      // the best recipe's order and sliders and search every mix of amounts (2-8 each, within the barrel's
+      // weight), ranked by the model's chance of the next level up.
+      const a0 = anchors[0], base = compact(a0.slots), f0 = base.filter(live);
+      const busyKeys = new Set((busy || []).map(key));
+      const amt = [];
+      const span = QMAX - QMIN + 1, total = Math.pow(span, f0.length);
+      for(let n = 0; n < total; n++){
+        let x = n; const qs = f0.map(() => { const q = QMIN + (x % span); x = Math.floor(x / span); return q; });
+        let i = 0; const slots = base.map(s => live(s) ? Object.assign({}, s, { qty: qs[i++] }) : s);
+        const k = key(slots);
+        if(byKey[k] || busyKeys.has(k) || kg(slots) > BARREL_KG) continue;
+        const p = model.predict(slots);
+        amt.push({ slots, key: k, mu: p.mu, sd: p.sd, sdTot: p.sdTot, chance: 1 - cdf((TOP_TIER - 0.5 - p.mu) / p.sdTot),
+          anchor: a0, moves: changes(a0.slots, slots).length, kind: 'amount',
+          used: f0.reduce((t, s) => t + (slots.find(y => y.ing === s.ing) || s).qty, 0) });
+      }
+      huntScored = amt.length;
+      const triedMixes = model.used.filter(r => sigOf(r.slots) === sigOf(base)).length;
+      amountHunt = { left: amt.length, tried: triedMixes };
+      // Best chance first; among near-equal chances, the one that uses fewer ingredients.
+      const sc = c => c.chance - 0.002 * c.used + 1e-3 * c.mu;
+      choose('Best shot at Legendary', amt, sc, [1]);
+      for(let i = 1; i < count; i++) choose('Amount test', amt, sc, [3, 2, 1]);
+      picks.forEach(p => { p.from = { tier: a0.best, slots: a0.slots }; p.changes = changes(a0.slots, p.slots); p.kg = kg(p.slots); });
+    } else if(anchors.length){
       const legendTarget = TOP_TIER - 0.5;
       const ROLE = { knob: 'Knob tweak', amount: 'Amount tweak', order: 'Order swap', mixed: 'Mixed tweak' };
       // Candidates are single moves (one gauge notch setting, one amount change, or one slot swap)
@@ -2622,19 +2786,40 @@ const Advisor = (() => {
         if(amountsMatter === false && kindOf(ch) === 'amount') return;
         st[kd][1]++; if(sameAsTried(c)) st[kd][0]++;
       });
-      production = { slots: a.slots, hits: a.hits, total: a.tiers.length, tier: a.best, coverage: st };
-      knobMap = a.slots.filter(live).map((s, i) => ({ slot: i + 1, ing: s.ing, cells: NOTCHES.map(g => {
+      production = { slots: a.slots, hits: a.hits, total: a.tiers.length, tier: a.best, coverage: st,
+        minHits: a.minHits || 0, minTotal: a.minTotal || 0 };
+      if(sm) knobMap = compact(a.slots).filter(live).map((s, i) => ({ slot: i + 1, ing: s.ing, cells: NOTCHES.map(g => {
+        if(g === s.gauge) return { g, state: 'current', tier: a.best };
+        const c = clone(compact(a.slots)); c[i].gauge = g;
+        const ts = sm.results.get(sm.code(c)) || [];
+        if(ts.length) return { g, state: 'tested', tier: Math.max(...ts), n: ts.length };
+        return { g, state: 'untested', chance: sm.avg[sm.code(c)] };
+      }) }));
+      else knobMap = a.slots.filter(live).map((s, i) => ({ slot: i + 1, ing: s.ing, cells: NOTCHES.map(g => {
         if(g === s.gauge) return { g, state: 'current', tier: a.best };
         const c = clone(a.slots); c[i].gauge = g;
         const ts = amountsMatter === false ? sigTiers(c) : (byKey[key(c)] || { tiers: [] }).tiers;
         if(ts.length) return { g, state: 'tested', tier: Math.max(...ts), n: ts.length };
         const p = model.predict(c);
-        return { g, state: 'untested', chance: notches && notches.fitsWell ? notches.prob(c) + 1e-6 * p.mu : 1 - cdf(((TOP_TIER - 0.5) - p.mu) / p.sdTot) };
+        return { g, state: 'untested', chance: notches && notches.fitsWell && !amountHunt ? notches.prob(c) + 1e-6 * p.mu : 1 - cdf(((TOP_TIER - 0.5) - p.mu) / p.sdTot) };
       }) }));
     }
-    const notchGuess = hunt && notches && notches.fitsWell && notches.top ? notches.top : null;
+    const notchGuess = hunt && !sm && !amountHunt && notches && notches.fitsWell && notches.top ? notches.top : null;
     // Amounts don't change the level (and the barrel's output doesn't depend on them), so every
     // suggested barrel uses the minimum amount of each ingredient: same result, least ingredients.
+    let amountCheck = null;
+    if(amountsMatter === false && maxSpread >= 1 && picks.length >= 2){
+      // Amounts changed a result by a full level at least once, so keep testing them a little:
+      // the top pick again, at the amounts your best recipe was brewed with (or 5 of each).
+      const src = hunt ? compact(anchors[0].slots) : compact(picks[0].slots);
+      const amt = src.some(s => live(s) && s.qty !== QMIN) ? src : src.map(s => live(s) ? Object.assign({}, s, { qty: QMIN + 3 }) : s);
+      const top = compact(picks[0].slots);
+      const slotsA = top.map((s, k) => live(s) ? Object.assign({}, s, { qty: (amt.find(x => x.ing === s.ing) || { qty: QMIN + 3 }).qty }) : s);
+      if(!byKey[key(slotsA)] && !(busy || []).some(b => key(b) === key(slotsA))){
+        amountCheck = Object.assign({}, picks[0], { slots: slotsA, key: key(slotsA), role: 'Amount check', amountCheck: true, kg: kg(slotsA) });
+        picks.splice(picks.length - 1, 1);
+      }
+    }
     if(amountsMatter === false){
       const lean = slots => compact(slots).map(s => live(s) ? Object.assign({}, s, { qty: QMIN }) : s);
       picks.forEach(p => {
@@ -2643,7 +2828,12 @@ const Advisor = (() => {
       });
       if(production){ production.slots = lean(production.slots); production.lean = true; }
     }
-    return { status: 'ok', mode: hunt ? 'hunt' : 'climb', amountsMatter, notchGuess, deep: !!deep, scored: cands.length + (hunt ? anchors.length && nearCount : 0), n: model.n, skipped, sigma: model.sigma, best, goal: hunt ? TOP_TIER : goal, picks, insights: insights.slice(0, 5), base: base.slots, production, knobMap };
+    if(amountCheck){
+      amountCheck.changes = changes(picks[0] ? picks[0].slots : amountCheck.slots, amountCheck.slots);
+      amountCheck.from = picks[0] ? { tier: picks[0].from ? picks[0].from.tier : best, slots: picks[0].slots, label: 'pick #1' } : amountCheck.from;
+      picks.push(amountCheck);
+    }
+    return { status: 'ok', mode: hunt ? 'hunt' : 'climb', amountsMatter, maxSpread, notchGuess, sliderStats, amountHunt, slotCheck, deep: !!deep, scored: cands.length + (hunt ? anchors.length && nearCount : 0), n: model.n, skipped, sigma: model.sigma, best, goal: hunt ? TOP_TIER : goal, picks, insights: insights.slice(0, 5), base: base.slots, production, knobMap };
   }
 
   return { recommend, compact, key, kg, fit, valid, complete, changes, kindOf };
@@ -2727,8 +2917,8 @@ function renderAdvisor(){
   const goalName = TIER_NAMES[res.goal];
   const conf = sd => sd < 0.45 ? 'Solid' : sd < 0.9 ? 'Rough' : 'Long shot';
   const predicted = mu => { const t = Math.max(1, Math.min(TOP_TIER, Math.round(mu))); return `${tierTag(t)} <span style="color:var(--text-faint)">(${mu.toFixed(1)})</span>`; };
-  const KIND = { knob: ['knob turn', 'knob turns'], amount: ['amount change', 'amount changes'], order: ['slot swap', 'slot swaps'], mixed: ['change', 'changes'] };
-  const tests = p => p.moves ? `${p.moves} ${KIND[p.kind || 'mixed'][p.moves === 1 ? 0 : 1]}` : `${p.changes.length} changes`;
+  const KIND = { knob: ['slider change', 'slider changes'], amount: ['amount change', 'amount changes'], order: ['slot swap', 'slot swaps'], mixed: ['change', 'changes'] };
+  const tests = p => p.amountCheck ? `amounts (${p.slots.find(x => x.ing).qty} of each)` : p.moves ? `${p.moves} ${KIND[p.kind || 'mixed'][p.moves === 1 ? 0 : 1]}` : `${p.changes.length} changes`;
   const loadRow = i => `<div class="rec-load">${idle.length ? 'Load into station ' + idle.map(id => `<button type="button" class="btn small ghost" title="Load into Station ${id.slice(1)}" aria-label="Load pick ${i+1} into Station ${id.slice(1)}" onclick="loadRecipe(${i},'${id}')">${id.slice(1)}</button>`).join('') : 'All stations are brewing'}</div>`;
   const cards = res.picks.map((p, i) => `<div class="rec-card ${i===0?'top':''}">
       <div class="rec-role">${p.role}<span>#${i+1}</span></div>
@@ -2736,14 +2926,14 @@ function renderAdvisor(){
       <div class="rec-stats">${hunt ? `
         <div><label>Search order</label><b>#${i+1} of ${res.picks.length}</b></div>
         <div><label>Tests</label><b>${tests(p)}</b></div>
-        <div><label>If not Legendary</label><b>${tierTag(Math.max(1, Math.min(TOP_TIER - 1, Math.round(p.mu))))}</b></div>
+        ${p.support ? `<div><label>Backed by</label><b>${p.support.length} of 4 explanations</b></div>` : `<div><label>If not Legendary</label><b>${tierTag(Math.max(1, Math.min(TOP_TIER - 1, Math.round(p.mu))))}</b></div>`}
         <div><label>Weight</label><b>${kgText(p.kg)}</b></div>` : `
         <div><label>Predicted</label><b>${predicted(p.mu)}</b></div>
         <div><label>Chance of ${goalName}+</label><b>${Math.round(p.chance * 100)}%</b></div>
         <div><label>Confidence</label><b>${conf(p.sd)}</b></div>
         <div><label>Weight</label><b>${kgText(p.kg)}</b></div>`}
       </div>
-      <div class="rec-why">Changes from your ${TIER_NAMES[p.from.tier]} recipe:<ul>${p.changes.map(c => `<li>${escapeHtml(c)}</li>`).join('') || '<li>New combination</li>'}</ul></div>
+      <div class="rec-why">${p.amountCheck ? 'Same sliders as pick #1, at higher amounts:' : `Changes from your ${TIER_NAMES[p.from.tier]} recipe:`}<ul>${p.changes.map(c => `<li>${escapeHtml(c)}</li>`).join('') || '<li>New combination</li>'}</ul></div>
       ${loadRow(i)}
     </div>`).join('');
   const ins = res.insights.length
@@ -2761,23 +2951,28 @@ function renderAdvisor(){
     const cell = (row, c) => c.state === 'current'
       ? `<span class="kcell current" title="Your ${TIER_NAMES[pr.tier]} recipe">★ now</span>`
       : c.state === 'tested'
-        ? `<span class="kcell tested" title="Tested ${c.n}×, best ${TIER_NAMES[c.tier]}"><span class="tier-dot tier-${c.tier}"></span>${({1:'Below',2:'Avg',3:'Above',4:'Good',5:'Great',6:'Exc',7:'Leg'})[c.tier]}</span>`
+        ? `<span class="kcell tested" title="Tested ${c.n}×, best ${TIER_NAMES[c.tier]}"><span class="tier-dot tier-${c.tier}"></span>${({1:'Below',2:'Avg',3:'Above',4:'Good',5:'Great',6:'Exc',7:'Perf',8:'Leg'})[c.tier]}</span>`
         : `<button type="button" class="kcell" title="Untested. Number ${rank(row.slot, c.g)} in test order. Click to load it into the next idle station." onclick="loadKnob(${row.slot - 1},${c.g})">#${rank(row.slot, c.g)}</button>`;
     const left = (cov.knob[1] - cov.knob[0]) + (cov.other[1] - cov.other[0]);
-    const guess = res.notchGuess;
+    const guess = res.notchGuess, sg = res.sliderStats && res.sliderStats.top;
+    const sliderGuess = sg ? `<div class="hunt-box" style="margin-bottom:12px;"><div class="hunt-h">Best guess at Legendary<span>from ${res.n} rated batches</span></div>
+        <div style="font-size:13px;">${sg.slots.filter(x => x.ing).map((x, k) => `<span class="chip" style="margin:0 4px 4px 0;">Slider ${k + 1} · ${escapeHtml(ING[x.ing].name)} <b>@${x.gauge}</b></span>`).join('')}</div>
+        <div class="field-note" style="margin:0;">Your results show the sliders belong to the slots, not the ingredients: moving an ingredient to another slot moves its setting onto a different slider, which is why order swaps dropped the level. So the hunt keeps your ingredient order and only moves sliders. It scores all ${res.sliderStats.total.toLocaleString()} slider settings under four explanations of how the level falls off away from the Legendary setting, rules out every setting already brewed, and tests the most likely ones first. This guess holds about ${Math.round(sg.share * 100)}% of what's left. That's the best single bet, not a sure thing, and every miss sharpens the next guess.</div></div>` : '';
     const guessHtml = guess ? `<div class="hunt-box" style="margin-bottom:12px;"><div class="hunt-h">Best guess at Legendary<span>from ${res.n} rated batches</span></div>
         <div style="font-size:13px;">${guess.gauges.map(g => `<span class="chip" style="margin:0 4px 4px 0;">${escapeHtml(ING[g.ing].name)} <b>@${g.gauge}</b></span>`).join('')}</div>
         <div class="field-note" style="margin:0;">Your batches behave like each gauge has one right notch, with every right gauge adding about a level. That pattern explains your results far better than anything else tried. If it holds, this setting has about a ${Math.round(guess.share * 100)}% chance of being the all-right one, and it hasn't been brewed yet. The picks below test it first. Every miss rules a setting out and the guess updates.</div></div>` : '';
-    huntHtml = guessHtml + `<div class="hunt-top">
-      <div class="hunt-box"><div class="hunt-h">Production recipe<span>${TIER_NAMES[pr.tier]} in ${pr.hits} of ${pr.total} brew${pr.total===1?'':'s'}</span></div>
+    huntHtml = (sliderGuess || guessHtml) + `<div class="hunt-top">
+      <div class="hunt-box"><div class="hunt-h">Production recipe<span>${pr.minTotal ? `${TIER_NAMES[pr.tier]} in ${pr.minHits} of ${pr.minTotal} brew${pr.minTotal===1?'':'s'} at ${MOON_MIN_QTY} of each` : `${TIER_NAMES[pr.tier]} in ${pr.hits} of ${pr.total} brew${pr.total===1?'':'s'}`}</span></div>
         <div class="field-note" style="margin:0;">Brew this for profit while the hunt runs.</div>
         ${barrelChips(pr.slots)}
         <div class="rec-load">${loadBtns}</div>
-        ${res.amountsMatter === false ? `<div class="field-note" style="margin:0;">Amounts don't change the level in your batches, and the barrel's output doesn't depend on them, so this recipe and every pick use ${MOON_MIN_QTY} of each ingredient, the least the still allows. The hunt also skips amount tests.</div>` : ''}
-        <div class="field-note" style="margin:0;"><b style="color:var(--text)">Hunt progress:</b> knob turns ruled out ${cov.knob[0]} of ${cov.knob[1]} · amount and order changes ruled out ${cov.other[0]} of ${cov.other[1]}${left ? ` · about ${Math.ceil(left / 5)} more round${Math.ceil(left / 5)===1?'':'s'} of 5 to cover every single change` : ' · every single change is covered, now testing pairs'}.</div></div>
-      <div class="hunt-box"><div class="hunt-h">Knob map<span>one gauge change at a time</span></div>
+        ${res.amountsMatter === false ? `<div class="field-note" style="margin:0;">Amounts don't change the level in your batches, and the barrel's output doesn't depend on them, so this recipe and the picks use ${MOON_MIN_QTY} of each ingredient, the least the still allows.${res.maxSpread >= 1 ? ' Amounts did change a result once or twice, so each round keeps one amount check.' : ''}</div>` : ''}
+        ${res.amountHunt ? `<div class="field-note" style="margin:0;"><b style="color:var(--text)">Hunt progress:</b> ${res.amountHunt.tried} brew${res.amountHunt.tried===1?'':'s'} at these exact sliders and order so far · ${res.amountHunt.left.toLocaleString()} untried mixes of amounts scored this round.</div>` : ''}
+        ${res.sliderStats ? `<div class="field-note" style="margin:0;"><b style="color:var(--text)">Hunt progress:</b> ${res.sliderStats.tried} of ${res.sliderStats.total.toLocaleString()} slider settings tried. This round's picks cover about ${Math.round(res.sliderStats.covered * 100)}% of the likely Legendary settings that are left.</div>` : ''}
+        <div class="field-note" style="margin:0;${res.sliderStats || res.amountHunt ? 'display:none;' : ''}"><b style="color:var(--text)">Hunt progress:</b> knob turns ruled out ${cov.knob[0]} of ${cov.knob[1]} · amount and order changes ruled out ${cov.other[0]} of ${cov.other[1]}${left ? ` · about ${Math.ceil(left / 5)} more round${Math.ceil(left / 5)===1?'':'s'} of 5 to cover every single change` : ' · every single change is covered, now testing pairs'}.</div></div>
+      <div class="hunt-box"><div class="hunt-h">${res.sliderStats ? 'Slider map' : 'Knob map'}<span>${res.sliderStats ? 'one slider change at a time' : 'one gauge change at a time'}</span></div>
         <div class="tbl-scroll"><table class="knobmap"><thead><tr><th>Slot</th>${[0,25,50,75,100].map(g => `<th>${g}</th>`).join('')}</tr></thead>
-        <tbody>${res.knobMap.map(row => `<tr><td><b style="color:var(--${SLOT_COLORS[row.slot-1]})">${row.slot}</b> ${escapeHtml(ING[row.ing].name)}</td>${row.cells.map(c => `<td>${cell(row, c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+        <tbody>${res.knobMap.map(row => `<tr><td><b style="color:var(--${SLOT_COLORS[row.slot-1]})">${row.slot}</b> ${res.sliderStats ? `Slider ${row.slot} <span style="color:var(--text-faint)">(${escapeHtml(ING[row.ing].name)})</span>` : escapeHtml(ING[row.ing].name)}</td>${row.cells.map(c => `<td>${cell(row, c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
         <div class="field-note" style="margin:0;">★ your recipe's setting · dots are tested results · #1, #2… is the order to test the rest (click one to load it).</div></div>
     </div>`;
   }
@@ -2796,7 +2991,11 @@ function renderAdvisor(){
   out.innerHTML = `<div class="advisor-goal"><span>${res.best >= TOP_TIER
       ? `You've hit <b>Legendary</b>. These picks aim to make it repeatable.`
       : hunt
-        ? `<b>Legendary hunt.</b> You already make ${TIER_NAMES[res.best]}, so every pick is a Legendary attempt built on your production recipe: single knob turns first, one amount or slot-order change every round, then pairs, plus one wider pick. Nobody can put honest odds on Legendary before you've seen it once, so picks are listed in test order, and every miss rules something out.`
+        ? (res.amountHunt
+            ? `<b>Legendary hunt.</b> You already make ${TIER_NAMES[res.best]}. The sliders are settled, but the same sliders came back at different levels with different amounts, so every pick keeps your best recipe's order and sliders and only changes how much of each ingredient goes in. Keep the order and sliders exactly as shown.`
+            : res.sliderStats
+            ? `<b>Legendary hunt.</b> You already make ${TIER_NAMES[res.best]}. Every pick keeps your ingredient order (Water, Apple, Bread, Corn, Barley) and only moves sliders, in the order your results make most likely. Keep the order the same when you brew them.`
+            : `<b>Legendary hunt.</b> You already make ${TIER_NAMES[res.best]}, so every pick is a Legendary attempt built on your production recipe: single knob turns first, one amount or slot-order change every round, then pairs, plus one wider pick. Nobody can put honest odds on Legendary before you've seen it once, so picks are listed in test order, and every miss rules something out.`)
         : `Best so far: <b>${TIER_NAMES[res.best]}</b>. Aiming for <b>${goalName}</b> and up. Predictions are estimates from your runs and get sharper with every batch you rate.`}</span>
       ${idle.length && res.picks.length ? `<button type="button" class="btn small" onclick="loadAllPicks()">Fill ${Math.min(idle.length, res.picks.length)} idle station${Math.min(idle.length, res.picks.length)===1?'':'s'} with the top picks</button>` : ''}</div>
     ${reviewHtml}
